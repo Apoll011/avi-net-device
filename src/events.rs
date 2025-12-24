@@ -99,4 +99,9 @@ pub enum AviEvent {
         stream_id: StreamId,
         reason: StreamCloseReason,
     },
+
+    ContextUpdated {
+        peer_id: PeerId,
+        context: serde_json::Value,
+    },
 }

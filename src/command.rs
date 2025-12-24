@@ -1,3 +1,4 @@
+use serde_json::Value;
 use tokio::sync::oneshot;
 use crate::events::{PeerId, StreamId};
 use crate::error::AviP2pError;
@@ -48,5 +49,15 @@ pub enum Command {
     // Lifecycle
     Shutdown {
         respond_to: oneshot::Sender<Result<(), AviP2pError>>
+    },
+
+    UpdateSelfContext {
+        patch: Value, // JSON partial update
+        respond_to: oneshot::Sender<Result<(), AviP2pError>>
+    },
+
+    GetPeerContext {
+        peer_id: Option<PeerId>, // None = Get All / Self
+        respond_to: oneshot::Sender<Result<Value, AviP2pError>>
     },
 }

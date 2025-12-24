@@ -1,15 +1,15 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64};
 use tokio::sync::mpsc;
 use futures::StreamExt;
 use tracing::{info};
+use std::cmp::Ordering;
 
 use libp2p::{
     Swarm,
     PeerId as LibPeerId,
     swarm::SwarmEvent,
     gossipsub,
-    kad,
     mdns,
     identify,
     request_response,
@@ -20,11 +20,12 @@ use crate::command::Command;
 use crate::events::{AviEvent, PeerId, StreamId};
 use crate::error::{AviP2pError, StreamCloseReason};
 use crate::protocols::stream::StreamMessage;
+use crate::context::{AviContext};
 
 static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
 fn generate_stream_id() -> StreamId {
-    StreamId(NEXT_STREAM_ID.fetch_add(1, Ordering::SeqCst))
+    StreamId(NEXT_STREAM_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
 }
 
 struct PeerState {
@@ -64,8 +65,10 @@ pub struct Runtime {
     streams: HashMap<u64, StreamState>,
     topics: HashSet<String>,
     started: bool,
-    // NEW: Track peers we have already announced to the user to reduce noise
     discovered_peers: HashSet<LibPeerId>,
+    context_store: HashMap<String, AviContext>,
+    local_context: AviContext,
+
 }
 
 impl Runtime {
@@ -74,6 +77,9 @@ impl Runtime {
         command_rx: mpsc::Receiver<Command>,
         event_tx: mpsc::Sender<AviEvent>,
     ) -> Self {
+        let local_peer_id = swarm.local_peer_id().to_string();
+        let local_context = AviContext::new(local_peer_id);
+
         Self {
             swarm,
             command_rx,
@@ -83,6 +89,10 @@ impl Runtime {
             topics: HashSet::new(),
             started: false,
             discovered_peers: HashSet::new(),
+
+            // New fields
+            context_store: HashMap::new(),
+            local_context,
         }
     }
 
@@ -204,6 +214,42 @@ impl Runtime {
                 let _ = respond_to.send(Ok(()));
                 self.command_rx.close();
             }
+
+            Command::UpdateSelfContext { patch, respond_to } => {
+                self.local_context.apply_patch(patch);
+
+                let my_id = self.local_context.device_id.clone();
+                self.local_context.vector_clock.increment(&my_id);
+
+                // 3. Broadcast to Mesh
+                if let Ok(data) = serde_json::to_vec(&self.local_context) {
+                    let topic = gossipsub::IdentTopic::new("avi-context-updates");
+                    if !self.topics.contains("avi-context-updates") {
+                        let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
+                        self.topics.insert("avi-context-updates".to_string());
+                    }
+
+                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                        let _ = respond_to.send(Err(AviP2pError::NetworkError(e.to_string())));
+                        return;
+                    }
+                }
+
+                let _ = respond_to.send(Ok(()));
+            }
+
+            Command::GetPeerContext { peer_id, respond_to } => {
+                let result = if let Some(pid) = peer_id {
+                    // Get remote peer context
+                    self.context_store.get(pid.as_str())
+                        .map(|c| c.data.clone())
+                        .ok_or(AviP2pError::PeerNotFound(pid))
+                } else {
+                    // Get self context
+                    Ok(self.local_context.data.clone())
+                };
+                let _ = respond_to.send(result);
+            }
         }
     }
 
@@ -247,6 +293,12 @@ impl Runtime {
 
                     self.peers.insert(peer_id, PeerState { addr: Some(addr.clone()) });
 
+                    let topic = gossipsub::IdentTopic::new("avi-context-updates");
+                    if !self.topics.contains("avi-context-updates") {
+                        let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
+                        self.topics.insert("avi-context-updates".to_string());
+                    }
+
                     let _ = self.event_tx.send(AviEvent::PeerConnected {
                         peer_id: PeerId::from(peer_id),
                         address: addr,
@@ -281,6 +333,39 @@ impl Runtime {
             }
 
             SwarmEvent::Behaviour(AviBehaviourEvent::Gossipsub(gossipsub::Event::Message { propagation_source, message, .. })) => {
+                let topic = message.clone().topic.into_string();
+
+                if topic == "avi-context-updates" {
+                    if let Ok(incoming_ctx) = serde_json::from_slice::<AviContext>(&message.data) {
+                        let peer_id_str = incoming_ctx.device_id.clone();
+
+                        let should_update = match self.context_store.get(&peer_id_str) {
+                            Some(existing_ctx) => {
+                                match incoming_ctx.vector_clock.partial_cmp(&existing_ctx.vector_clock) {
+                                    Some(Ordering::Greater) => true, // Incoming is newer
+                                    None => {
+                                     incoming_ctx.timestamp > existing_ctx.timestamp
+                                    }
+                                    _ => false
+                                }
+                            },
+                            None => true
+                        };
+
+                        if should_update {
+                            // Update Store
+                            self.context_store.insert(peer_id_str.clone(), incoming_ctx.clone());
+
+                            // Notify User
+                            let _ = self.event_tx.send(AviEvent::ContextUpdated {
+                                peer_id: PeerId::new(&peer_id_str),
+                                context: incoming_ctx.data,
+                            }).await;
+                        }
+                    }
+                    return;
+                }
+
                 let _ = self.event_tx.send(AviEvent::Message {
                     from: PeerId::from(propagation_source),
                     topic: message.topic.into_string(),

@@ -17,6 +17,7 @@ use libp2p::{
 };
 use std::time::Duration;
 use std::str::FromStr;
+use serde_json::Value;
 
 /// Main entry point for the AVI P2P node.
 pub struct AviP2p {
@@ -181,6 +182,21 @@ impl AviP2pHandle {
     pub async fn discover_peers(&self) -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::DiscoverPeers { respond_to: tx })
+            .await.map_err(|_| AviP2pError::ChannelClosed)?;
+        rx.await.map_err(|_| AviP2pError::ChannelClosed)?
+    }
+
+    pub async fn update_context(&self, patch: Value) -> Result<(), AviP2pError> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx.send(Command::UpdateSelfContext { patch, respond_to: tx })
+            .await.map_err(|_| AviP2pError::ChannelClosed)?;
+        rx.await.map_err(|_| AviP2pError::ChannelClosed)?
+    }
+
+    /// Get the context of a specific peer, or local context if None.
+    pub async fn get_context(&self, peer_id: Option<PeerId>) -> Result<Value, AviP2pError> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx.send(Command::GetPeerContext { peer_id, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }

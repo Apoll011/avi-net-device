@@ -18,7 +18,7 @@ async fn run_simulated_microphone(handle: AviP2pHandle, stream_id: StreamId, act
         dummy_audio[0..8].copy_from_slice(&count_bytes);
 
         // Send data
-        if let Err(e) = handle.send_audio(stream_id, dummy_audio).await {
+        if let Err(e) = handle.send_stream_data(stream_id, dummy_audio).await {
             eprintln!("🔴 Microphone stopped (Error sending: {})", e);
             break;
         }
@@ -64,11 +64,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // --- Audio Logic ---
 
                 // Case A: Someone is calling us
-                AviEvent::AudioStreamRequested { from, stream_id } => {
+                AviEvent::StreamRequested { from, stream_id } => {
                     println!("\n📞 INCOMING CALL from {} (Stream {})", from, stream_id);
                     println!("   Auto-accepting call...");
 
-                    if let Err(e) = handle_clone.accept_audio_stream(stream_id).await {
+                    if let Err(e) = handle_clone.accept_stream(stream_id).await {
                         eprintln!("   Error accepting call: {}", e);
                     } else {
                         println!("✅ Call Accepted!");
@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
 
                 // Case B: We called someone and they accepted
-                AviEvent::AudioStreamAccepted { peer_id, stream_id } => {
+                AviEvent::StreamAccepted { peer_id, stream_id } => {
                     println!("\n✅ CALL ESTABLISHED with {} (Stream {})", peer_id, stream_id);
                     // Start sending our audio
                     active_call_clone.store(true, Ordering::Relaxed);
@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
 
                 // Case C: Receiving Audio Data
-                AviEvent::AudioData { from, stream_id, data } => {
+                AviEvent::StreamData { from, stream_id, data } => {
                     // Extract the packet count we put in earlier
                     let mut count_bytes = [0u8; 8];
                     if data.len() >= 8 {
@@ -109,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
 
                 // Case D: Call Ended
-                AviEvent::AudioStreamClosed { peer_id, stream_id, reason } => {
+                AviEvent::StreamClosed { peer_id, stream_id, reason } => {
                     println!("\n❌ Call with {} ended (Stream {}). Reason: {:?}", peer_id, stream_id, reason);
                     active_call_clone.store(false, Ordering::Relaxed);
                 },
@@ -135,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "call" if parts.len() > 1 => {
                 let target = PeerId::new(parts[1]);
                 println!("📞 Dialing {}...", target);
-                match handle.request_audio_stream(target).await {
+                match handle.request_stream(target).await {
                     Ok(id) => println!("   Request sent. Stream ID: {}", id),
                     Err(e) => eprintln!("   Failed to request call: {}", e),
                 }
@@ -143,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "hangup" if parts.len() > 1 => {
                 if let Ok(id) = parts[1].parse::<u64>() {
                     active_call.store(false, Ordering::Relaxed);
-                    let _ = handle.close_audio_stream(StreamId(id)).await;
+                    let _ = handle.close_stream(StreamId(id)).await;
                     println!("   Hung up stream {}", id);
                 }
             },

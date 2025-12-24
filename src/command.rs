@@ -19,21 +19,20 @@ pub enum Command {
         respond_to: oneshot::Sender<Result<(), AviP2pError>>
     },
 
-    // Audio
-    RequestAudioStream {
+    RequestStream {
         peer_id: PeerId,
         respond_to: oneshot::Sender<Result<StreamId, AviP2pError>>
     },
-    AcceptAudioStream {
+    AcceptStream {
         stream_id: StreamId,
         respond_to: oneshot::Sender<Result<(), AviP2pError>>
     },
-    SendAudio {
+    SendStreamData {
         stream_id: StreamId,
         data: Vec<u8>,
         respond_to: oneshot::Sender<Result<(), AviP2pError>>
     },
-    CloseAudioStream {
+    CloseStream {
         stream_id: StreamId,
         respond_to: oneshot::Sender<Result<(), AviP2pError>>
     },

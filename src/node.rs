@@ -143,30 +143,30 @@ impl AviP2pHandle {
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn request_audio_stream(&self, peer_id: PeerId) -> Result<StreamId, AviP2pError> {
+    pub async fn request_stream(&self, peer_id: PeerId) -> Result<StreamId, AviP2pError> {
         let (tx, rx) = oneshot::channel();
-        self.command_tx.send(Command::RequestAudioStream { peer_id, respond_to: tx })
+        self.command_tx.send(Command::RequestStream { peer_id, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn accept_audio_stream(&self, stream_id: StreamId) -> Result<(), AviP2pError> {
+    pub async fn accept_stream(&self, stream_id: StreamId) -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
-        self.command_tx.send(Command::AcceptAudioStream { stream_id, respond_to: tx })
+        self.command_tx.send(Command::AcceptStream { stream_id, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn send_audio(&self, stream_id: StreamId, data: Vec<u8>) -> Result<(), AviP2pError> {
+    pub async fn send_stream_data(&self, stream_id: StreamId, data: Vec<u8>) -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
-        self.command_tx.send(Command::SendAudio { stream_id, data, respond_to: tx })
+        self.command_tx.send(Command::SendStreamData { stream_id, data, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn close_audio_stream(&self, stream_id: StreamId) -> Result<(), AviP2pError> {
+    pub async fn close_stream(&self, stream_id: StreamId) -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
-        self.command_tx.send(Command::CloseAudioStream { stream_id, respond_to: tx })
+        self.command_tx.send(Command::CloseStream { stream_id, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }

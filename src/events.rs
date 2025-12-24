@@ -77,24 +77,24 @@ pub enum AviEvent {
         data: Vec<u8>,
     },
 
-    // Audio streaming
-    AudioStreamRequested {
+    //  streaming
+    StreamRequested {
         from: PeerId,
         stream_id: StreamId,
     },
 
-    AudioStreamAccepted {
+    StreamAccepted {
         peer_id: PeerId,
         stream_id: StreamId,
     },
 
-    AudioData {
+    StreamData {
         from: PeerId,
         stream_id: StreamId,
         data: Vec<u8>,
     },
 
-    AudioStreamClosed {
+    StreamClosed {
         peer_id: PeerId,
         stream_id: StreamId,
         reason: StreamCloseReason,

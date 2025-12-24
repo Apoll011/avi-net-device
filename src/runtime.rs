@@ -19,7 +19,7 @@ use crate::behaviour::{AviBehaviour, AviBehaviourEvent};
 use crate::command::Command;
 use crate::events::{AviEvent, PeerId, StreamId};
 use crate::error::{AviP2pError, StreamCloseReason};
-use crate::protocols::audio::AudioStreamMessage;
+use crate::protocols::stream::StreamMessage;
 
 static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -138,7 +138,7 @@ impl Runtime {
                 };
                 let _ = respond_to.send(res);
             }
-            Command::RequestAudioStream { peer_id, respond_to } => {
+            Command::RequestStream { peer_id, respond_to } => {
                 let res = if let Ok(target) = LibPeerId::try_from(peer_id.clone()) {
                     let id = generate_stream_id();
                     self.streams.insert(id.0, StreamState {
@@ -146,19 +146,19 @@ impl Runtime {
                         status: StreamStatus::Requested,
                         direction: StreamDirection::Outbound,
                     });
-                    self.swarm.behaviour_mut().audio.send_request(&target, AudioStreamMessage::RequestStream { stream_id: id.0 });
+                    self.swarm.behaviour_mut().stream.send_request(&target, StreamMessage::RequestStream { stream_id: id.0 });
                     Ok(id)
                 } else {
                     Err(AviP2pError::PeerNotFound(peer_id))
                 };
                 let _ = respond_to.send(res);
             }
-            Command::AcceptAudioStream { stream_id, respond_to } => {
+            Command::AcceptStream { stream_id, respond_to } => {
                 let res = if let Some(state) = self.streams.get_mut(&stream_id.0) {
                     state.status = StreamStatus::Accepted;
-                    self.swarm.behaviour_mut().audio.send_request(
+                    self.swarm.behaviour_mut().stream.send_request(
                         &state.peer,
-                        AudioStreamMessage::AcceptStream { stream_id: stream_id.0 }
+                        StreamMessage::AcceptStream { stream_id: stream_id.0 }
                     );
                     Ok(())
                 } else {
@@ -166,11 +166,11 @@ impl Runtime {
                 };
                 let _ = respond_to.send(res);
             }
-            Command::SendAudio { stream_id, data, respond_to } => {
+            Command::SendStreamData { stream_id, data, respond_to } => {
                 let res = if let Some(state) = self.streams.get(&stream_id.0) {
-                    self.swarm.behaviour_mut().audio.send_request(
+                    self.swarm.behaviour_mut().stream.send_request(
                         &state.peer,
-                        AudioStreamMessage::AudioData { stream_id: stream_id.0, data }
+                        StreamMessage::StreamData { stream_id: stream_id.0, data }
                     );
                     Ok(())
                 } else {
@@ -178,11 +178,11 @@ impl Runtime {
                 };
                 let _ = respond_to.send(res);
             }
-            Command::CloseAudioStream { stream_id, respond_to } => {
+            Command::CloseStream { stream_id, respond_to } => {
                 let res = if let Some(state) = self.streams.remove(&stream_id.0) {
-                    self.swarm.behaviour_mut().audio.send_request(
+                    self.swarm.behaviour_mut().stream.send_request(
                         &state.peer,
-                        AudioStreamMessage::CloseStream { stream_id: stream_id.0 }
+                        StreamMessage::CloseStream { stream_id: stream_id.0 }
                     );
                     Ok(())
                 } else {
@@ -267,7 +267,7 @@ impl Runtime {
 
                     for id in ids_to_remove {
                         self.streams.remove(&id);
-                        let _ = self.event_tx.send(AviEvent::AudioStreamClosed {
+                        let _ = self.event_tx.send(AviEvent::StreamClosed {
                             peer_id: PeerId::from(peer_id),
                             stream_id: StreamId(id),
                             reason: StreamCloseReason::RemoteClose,
@@ -287,10 +287,10 @@ impl Runtime {
                     data: message.data,
                 }).await;
             }
-            SwarmEvent::Behaviour(AviBehaviourEvent::Audio(request_response::Event::Message { peer, message })) => {
+            SwarmEvent::Behaviour(AviBehaviourEvent::Stream(request_response::Event::Message { peer, message })) => {
                 match message {
                     request_response::Message::Request { request, .. } => {
-                        self.handle_audio_message(peer, request).await;
+                        self.handle_stream_message(peer, request).await;
                     }
                     _ => {}
                 }
@@ -299,41 +299,41 @@ impl Runtime {
         }
     }
 
-    async fn handle_audio_message(&mut self, peer: LibPeerId, msg: AudioStreamMessage) {
+    async fn handle_stream_message(&mut self, peer: LibPeerId, msg: StreamMessage) {
         let peer_wrap = PeerId::from(peer);
         match msg {
-            AudioStreamMessage::RequestStream { stream_id } => {
+            StreamMessage::RequestStream { stream_id } => {
                 self.streams.insert(stream_id, StreamState {
                     peer,
                     status: StreamStatus::Requested,
                     direction: StreamDirection::Inbound,
                 });
-                let _ = self.event_tx.send(AviEvent::AudioStreamRequested {
+                let _ = self.event_tx.send(AviEvent::StreamRequested {
                     from: peer_wrap,
                     stream_id: StreamId(stream_id),
                 }).await;
             }
-            AudioStreamMessage::AcceptStream { stream_id } => {
+            StreamMessage::AcceptStream { stream_id } => {
                 if let Some(state) = self.streams.get_mut(&stream_id) {
                     state.status = StreamStatus::Active;
-                    let _ = self.event_tx.send(AviEvent::AudioStreamAccepted {
+                    let _ = self.event_tx.send(AviEvent::StreamAccepted {
                         peer_id: peer_wrap,
                         stream_id: StreamId(stream_id),
                     }).await;
                 }
             }
-            AudioStreamMessage::AudioData { stream_id, data } => {
+            StreamMessage::StreamData { stream_id, data } => {
                 if self.streams.contains_key(&stream_id) {
-                    let _ = self.event_tx.send(AviEvent::AudioData {
+                    let _ = self.event_tx.send(AviEvent::StreamData {
                         from: peer_wrap,
                         stream_id: StreamId(stream_id),
                         data,
                     }).await;
                 }
             }
-            AudioStreamMessage::CloseStream { stream_id } => {
+            StreamMessage::CloseStream { stream_id } => {
                 self.streams.remove(&stream_id);
-                let _ = self.event_tx.send(AviEvent::AudioStreamClosed {
+                let _ = self.event_tx.send(AviEvent::StreamClosed {
                     peer_id: peer_wrap,
                     stream_id: StreamId(stream_id),
                     reason: StreamCloseReason::RemoteClose,

@@ -6,18 +6,18 @@ use libp2p::{
     request_response,
     swarm::NetworkBehaviour,
     PeerId as LibPeerId,
-    identity::Keypair, // Import Keypair
+    identity::Keypair,
 };
-use crate::protocols::audio::AviAudioCodec; // Removed AudioStreamMessage import
+use crate::protocols::stream::AviStreamCodec;
 
 #[derive(NetworkBehaviour)]
 pub struct AviBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub kad: kad::Behaviour<kad::store::MemoryStore>,
-    #[cfg(not(target_arch = "wasm32"))] // mDNS is not available on WebAssembly targets
+    #[cfg(not(target_arch = "wasm32"))]
     pub mdns: mdns::tokio::Behaviour,
     pub identify: identify::Behaviour,
-    pub audio: request_response::Behaviour<AviAudioCodec>,
+    pub stream: request_response::Behaviour<AviStreamCodec>,
 }
 
 impl AviBehaviour {
@@ -51,11 +51,10 @@ impl AviBehaviour {
             local_key.public(), // Use the public key from the Keypair
         ).with_agent_version(node_name));
 
-        // Audio Protocol (Request-Response) - Corrected API usage
-        let audio = request_response::Behaviour::new(
+        let stream = request_response::Behaviour::new(
             // `new` expects an IntoIterator of (Protocol, ProtocolSupport) tuples
             std::iter::once((
-                crate::protocols::audio::AviAudioProtocol,
+                crate::protocols::stream::AviStreamProtocol,
                 request_response::ProtocolSupport::Full
             )),
             request_response::Config::default(),
@@ -67,7 +66,7 @@ impl AviBehaviour {
             #[cfg(not(target_arch = "wasm32"))] // Conditional compilation for mdns field
             mdns,
             identify,
-            audio,
+            stream,
         }
     }
 }

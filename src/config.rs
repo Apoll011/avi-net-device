@@ -18,8 +18,8 @@ pub struct AviP2pConfig {
     /// Maximum connected peers allowed (soft limit)
     pub max_peers: usize,
 
-    /// Maximum concurrent audio streams
-    pub max_audio_streams: usize,
+    /// Maximum concurrent streams
+    pub max_streams: usize,
 }
 
 impl Default for AviP2pConfig {
@@ -31,7 +31,7 @@ impl Default for AviP2pConfig {
             enable_mdns: true,
             enable_kad: true,
             max_peers: 50,
-            max_audio_streams: 10,
+            max_streams: 10,
         }
     }
 }

@@ -4,7 +4,7 @@
 //!
 //! ## Features
 //! - Pub/Sub messaging
-//! - Audio streaming (logical streams over request-response)
+//! - Streaming (logical streams over request-response)
 //! - Kademlia Mesh Networking
 //! - Zero libp2p type exposure
 

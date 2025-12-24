@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+// Removed unused imports
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc};
 use futures::StreamExt;
-use tracing::{info}; // Removed unused imports
+use tracing::{info};
 
 use libp2p::{
     Swarm,
@@ -30,7 +30,7 @@ fn generate_stream_id() -> StreamId {
 }
 
 struct PeerState {
-    #[allow(dead_code)] // Keep address for debugging/future use
+    #[allow(dead_code)]
     addr: Option<String>,
 }
 
@@ -44,7 +44,7 @@ enum StreamStatus {
 
 struct StreamState {
     peer: LibPeerId,
-    #[allow(dead_code)] // Used for logic checks
+    #[allow(dead_code)]
     status: StreamStatus,
     #[allow(dead_code)]
     direction: StreamDirection,
@@ -65,6 +65,7 @@ pub struct Runtime {
     peers: HashMap<LibPeerId, PeerState>,
     streams: HashMap<u64, StreamState>,
     topics: HashSet<String>,
+    started: bool,
 }
 
 impl Runtime {
@@ -80,20 +81,11 @@ impl Runtime {
             peers: HashMap::new(),
             streams: HashMap::new(),
             topics: HashSet::new(),
+            started: false,
         }
     }
 
     pub async fn run(mut self) {
-        // Announce start
-        let local_peer_id = *self.swarm.local_peer_id();
-        let listeners: Vec<String> = self.swarm.listeners().map(|a| a.to_string()).collect();
-
-        let _ = self.event_tx.send(AviEvent::Started {
-            local_peer_id: PeerId::from(local_peer_id),
-            listen_addresses: listeners,
-        }).await;
-
-        // Main Loop
         loop {
             tokio::select! {
                 cmd = self.command_rx.recv() => {
@@ -147,14 +139,11 @@ impl Runtime {
             Command::RequestAudioStream { peer_id, respond_to } => {
                 let res = if let Ok(target) = LibPeerId::try_from(peer_id.clone()) {
                     let id = generate_stream_id();
-                    // Track internal state
                     self.streams.insert(id.0, StreamState {
                         peer: target,
                         status: StreamStatus::Requested,
                         direction: StreamDirection::Outbound,
                     });
-
-                    // Send request packet
                     self.swarm.behaviour_mut().audio.send_request(&target, AudioStreamMessage::RequestStream { stream_id: id.0 });
                     Ok(id)
                 } else {
@@ -218,6 +207,19 @@ impl Runtime {
 
     async fn handle_swarm_event(&mut self, event: SwarmEvent<AviBehaviourEvent>) {
         match event {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                if !self.started {
+                    self.started = true;
+                    let local_peer_id = *self.swarm.local_peer_id();
+                    // We send just this address, or we could gather them.
+                    // Usually the first one is sufficient for the "Started" event.
+                    let _ = self.event_tx.send(AviEvent::Started {
+                        local_peer_id: PeerId::from(local_peer_id),
+                        listen_addresses: vec![address.to_string()],
+                    }).await;
+                }
+            }
+
             #[cfg(not(target_arch = "wasm32"))]
             SwarmEvent::Behaviour(AviBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                 for (peer_id, multiaddr) in list {
@@ -227,7 +229,6 @@ impl Runtime {
             }
             SwarmEvent::Behaviour(AviBehaviourEvent::Identify(identify::Event::Received { peer_id, info })) => {
                 self.emit_peer_discovered(peer_id).await;
-                // Add addresses to Kademlia
                 for addr in info.listen_addrs {
                     self.swarm.behaviour_mut().kad.add_address(&peer_id, addr);
                 }
@@ -262,7 +263,6 @@ impl Runtime {
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 self.peers.remove(&peer_id);
-                // Clean up streams associated with this peer
                 let ids_to_remove: Vec<u64> = self.streams.iter()
                     .filter(|(_, state)| state.peer == peer_id)
                     .map(|(id, _)| *id)
@@ -290,7 +290,6 @@ impl Runtime {
 
         match msg {
             AudioStreamMessage::RequestStream { stream_id } => {
-                // Inbound stream request
                 self.streams.insert(stream_id, StreamState {
                     peer,
                     status: StreamStatus::Requested,
@@ -312,7 +311,6 @@ impl Runtime {
                 }
             }
             AudioStreamMessage::AudioData { stream_id, data } => {
-                // Only forward data if we know about the stream
                 if self.streams.contains_key(&stream_id) {
                     let _ = self.event_tx.send(AviEvent::AudioData {
                         from: peer_wrap,
@@ -333,7 +331,6 @@ impl Runtime {
         }
     }
 
-    // FIX: Changed &self to &mut self to satisfy Send bounds for Future
     async fn emit_peer_discovered(&mut self, peer_id: LibPeerId) {
         let _ = self.event_tx.send(AviEvent::PeerDiscovered {
             peer_id: PeerId::from(peer_id),

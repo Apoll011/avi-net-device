@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc;
 use futures::StreamExt;
-use tracing::{info, warn}; // Added warn
+use tracing::{info};
 
 use libp2p::{
     Swarm,
@@ -64,6 +64,8 @@ pub struct Runtime {
     streams: HashMap<u64, StreamState>,
     topics: HashSet<String>,
     started: bool,
+    // NEW: Track peers we have already announced to the user to reduce noise
+    discovered_peers: HashSet<LibPeerId>,
 }
 
 impl Runtime {
@@ -80,6 +82,7 @@ impl Runtime {
             streams: HashMap::new(),
             topics: HashSet::new(),
             started: false,
+            discovered_peers: HashSet::new(),
         }
     }
 
@@ -103,7 +106,7 @@ impl Runtime {
     }
 
     async fn handle_command(&mut self, cmd: Command) {
-        // ... (No changes in handle_command, keeping existing logic) ...
+        // (This section remains exactly the same as before)
         match cmd {
             Command::Subscribe { topic, respond_to } => {
                 let topic_hash = gossipsub::IdentTopic::new(&topic);
@@ -220,14 +223,8 @@ impl Runtime {
             #[cfg(not(target_arch = "wasm32"))]
             SwarmEvent::Behaviour(AviBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                 for (peer_id, multiaddr) in list {
-                    // 1. Add to Kademlia so we remember them
                     self.swarm.behaviour_mut().kad.add_address(&peer_id, multiaddr.clone());
-
-                    // 2. CRITICAL CHANGE: Force dial immediately to establish connection
-                    // This ensures "plug-and-play" connectivity without waiting for gossipsub mesh formation
-                    if let Err(_e) = self.swarm.dial(multiaddr) {
-                        // It's normal for dials to fail sometimes (e.g. redundant connections), mostly ignore
-                    }
+                    if let Err(_e) = self.swarm.dial(multiaddr) {}
 
                     self.emit_peer_discovered(peer_id).await;
                 }
@@ -239,6 +236,50 @@ impl Runtime {
                     self.swarm.behaviour_mut().kad.add_address(&peer_id, addr);
                 }
             }
+
+            // Connection ESTABLISHED
+            SwarmEvent::ConnectionEstablished { peer_id, endpoint, num_established, .. } => {
+                if num_established.get() == 1 {
+                    let addr = match endpoint {
+                        libp2p::core::ConnectedPoint::Dialer { address, .. } => address.to_string(),
+                        libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => send_back_addr.to_string(),
+                    };
+
+                    self.peers.insert(peer_id, PeerState { addr: Some(addr.clone()) });
+
+                    let _ = self.event_tx.send(AviEvent::PeerConnected {
+                        peer_id: PeerId::from(peer_id),
+                        address: addr,
+                    }).await;
+                }
+            }
+
+            // Connection CLOSED
+            SwarmEvent::ConnectionClosed { peer_id, num_established, .. } => {
+                if num_established == 0 {
+                    self.peers.remove(&peer_id);
+                    self.discovered_peers.remove(&peer_id);
+
+                    let ids_to_remove: Vec<u64> = self.streams.iter()
+                        .filter(|(_, state)| state.peer == peer_id)
+                        .map(|(id, _)| *id)
+                        .collect();
+
+                    for id in ids_to_remove {
+                        self.streams.remove(&id);
+                        let _ = self.event_tx.send(AviEvent::AudioStreamClosed {
+                            peer_id: PeerId::from(peer_id),
+                            stream_id: StreamId(id),
+                            reason: StreamCloseReason::RemoteClose,
+                        }).await;
+                    }
+
+                    let _ = self.event_tx.send(AviEvent::PeerDisconnected {
+                        peer_id: PeerId::from(peer_id),
+                    }).await;
+                }
+            }
+
             SwarmEvent::Behaviour(AviBehaviourEvent::Gossipsub(gossipsub::Event::Message { propagation_source, message, .. })) => {
                 let _ = self.event_tx.send(AviEvent::Message {
                     from: PeerId::from(propagation_source),
@@ -254,48 +295,12 @@ impl Runtime {
                     _ => {}
                 }
             }
-            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                let addr = match endpoint {
-                    libp2p::core::ConnectedPoint::Dialer { address, .. } => address.to_string(),
-                    libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => send_back_addr.to_string(),
-                };
-
-                self.peers.insert(peer_id, PeerState { addr: Some(addr.clone()) });
-
-                let _ = self.event_tx.send(AviEvent::PeerConnected {
-                    peer_id: PeerId::from(peer_id),
-                    address: addr,
-                }).await;
-            }
-            SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                self.peers.remove(&peer_id);
-                // Clean up streams associated with this peer
-                let ids_to_remove: Vec<u64> = self.streams.iter()
-                    .filter(|(_, state)| state.peer == peer_id)
-                    .map(|(id, _)| *id)
-                    .collect();
-
-                for id in ids_to_remove {
-                    self.streams.remove(&id);
-                    let _ = self.event_tx.send(AviEvent::AudioStreamClosed {
-                        peer_id: PeerId::from(peer_id),
-                        stream_id: StreamId(id),
-                        reason: StreamCloseReason::RemoteClose,
-                    }).await;
-                }
-
-                let _ = self.event_tx.send(AviEvent::PeerDisconnected {
-                    peer_id: PeerId::from(peer_id),
-                }).await;
-            }
             _ => {}
         }
     }
 
-    // Audio message handling (unchanged)
     async fn handle_audio_message(&mut self, peer: LibPeerId, msg: AudioStreamMessage) {
         let peer_wrap = PeerId::from(peer);
-
         match msg {
             AudioStreamMessage::RequestStream { stream_id } => {
                 self.streams.insert(stream_id, StreamState {
@@ -303,7 +308,6 @@ impl Runtime {
                     status: StreamStatus::Requested,
                     direction: StreamDirection::Inbound,
                 });
-
                 let _ = self.event_tx.send(AviEvent::AudioStreamRequested {
                     from: peer_wrap,
                     stream_id: StreamId(stream_id),
@@ -340,6 +344,11 @@ impl Runtime {
     }
 
     async fn emit_peer_discovered(&mut self, peer_id: LibPeerId) {
+        if self.discovered_peers.contains(&peer_id) {
+            return;
+        }
+
+        self.discovered_peers.insert(peer_id);
         let _ = self.event_tx.send(AviEvent::PeerDiscovered {
             peer_id: PeerId::from(peer_id),
         }).await;

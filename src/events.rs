@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PeerId(pub(crate) String);
@@ -16,6 +17,23 @@ impl PeerId {
 impl fmt::Display for PeerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+// Implement conversion from libp2p::PeerId to our PeerId wrapper
+impl From<libp2p::PeerId> for PeerId {
+    fn from(id: libp2p::PeerId) -> Self {
+        PeerId(id.to_base58())
+    }
+}
+
+// Implement conversion from our PeerId wrapper to libp2p::PeerId
+impl TryFrom<PeerId> for libp2p::PeerId {
+    type Error = crate::error::AviP2pError;
+
+    fn try_from(id: PeerId) -> Result<Self, Self::Error> {
+        libp2p::PeerId::from_str(&id.0)
+            .map_err(|e| crate::error::AviP2pError::NetworkError(e.to_string()))
     }
 }
 

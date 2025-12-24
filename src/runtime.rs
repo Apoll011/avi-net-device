@@ -1,16 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::str::FromStr;
+use std::time::Duration;
 
-use tokio::sync::{mpsc};
+use tokio::sync::{mpsc, oneshot};
 use futures::StreamExt;
-use tracing::{info};
+use tracing::{info}; // Removed unused imports
 
 use libp2p::{
     Swarm,
     PeerId as LibPeerId,
     swarm::SwarmEvent,
     gossipsub,
+    kad,
     mdns,
     identify,
     request_response,
@@ -29,12 +30,15 @@ fn generate_stream_id() -> StreamId {
 }
 
 struct PeerState {
+    #[allow(dead_code)] // Keep address for debugging/future use
     addr: Option<String>,
 }
 
 enum StreamStatus {
     Requested,
+    #[allow(dead_code)]
     Accepted,
+    #[allow(dead_code)]
     Active,
 }
 
@@ -42,6 +46,7 @@ struct StreamState {
     peer: LibPeerId,
     #[allow(dead_code)] // Used for logic checks
     status: StreamStatus,
+    #[allow(dead_code)]
     direction: StreamDirection,
 }
 
@@ -84,7 +89,7 @@ impl Runtime {
         let listeners: Vec<String> = self.swarm.listeners().map(|a| a.to_string()).collect();
 
         let _ = self.event_tx.send(AviEvent::Started {
-            local_peer_id: PeerId::from(local_peer_id).into(),
+            local_peer_id: PeerId::from(local_peer_id),
             listen_addresses: listeners,
         }).await;
 
@@ -140,7 +145,7 @@ impl Runtime {
                 let _ = respond_to.send(res);
             }
             Command::RequestAudioStream { peer_id, respond_to } => {
-                let res = if let Ok(target) = LibPeerId::from_str(peer_id.as_str()) {
+                let res = if let Ok(target) = LibPeerId::try_from(peer_id.clone()) {
                     let id = generate_stream_id();
                     // Track internal state
                     self.streams.insert(id.0, StreamState {
@@ -196,7 +201,7 @@ impl Runtime {
             }
             Command::GetConnectedPeers { respond_to } => {
                 let peers = self.peers.keys()
-                    .map(|p| PeerId::new(&p.to_string()))
+                    .map(|p| PeerId::from(*p))
                     .collect();
                 let _ = respond_to.send(Ok(peers));
             }
@@ -205,9 +210,7 @@ impl Runtime {
                 let _ = respond_to.send(Ok(()));
             }
             Command::Shutdown { respond_to } => {
-                // In a real impl, we might gracefully close connections
                 let _ = respond_to.send(Ok(()));
-                // Allow the select! loop to exit
                 self.command_rx.close();
             }
         }
@@ -215,6 +218,7 @@ impl Runtime {
 
     async fn handle_swarm_event(&mut self, event: SwarmEvent<AviBehaviourEvent>) {
         match event {
+            #[cfg(not(target_arch = "wasm32"))]
             SwarmEvent::Behaviour(AviBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                 for (peer_id, multiaddr) in list {
                     self.swarm.behaviour_mut().kad.add_address(&peer_id, multiaddr);
@@ -230,7 +234,7 @@ impl Runtime {
             }
             SwarmEvent::Behaviour(AviBehaviourEvent::Gossipsub(gossipsub::Event::Message { propagation_source, message, .. })) => {
                 let _ = self.event_tx.send(AviEvent::Message {
-                    from: PeerId::new(&propagation_source.to_string()),
+                    from: PeerId::from(propagation_source),
                     topic: message.topic.into_string(),
                     data: message.data,
                 }).await;
@@ -240,7 +244,7 @@ impl Runtime {
                     request_response::Message::Request { request, .. } => {
                         self.handle_audio_message(peer, request).await;
                     }
-                    _ => {} // We don't use responses in this fire-and-forget logic
+                    _ => {}
                 }
             }
             SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
@@ -252,7 +256,7 @@ impl Runtime {
                 self.peers.insert(peer_id, PeerState { addr: Some(addr.clone()) });
 
                 let _ = self.event_tx.send(AviEvent::PeerConnected {
-                    peer_id: PeerId::new(&peer_id.to_string()),
+                    peer_id: PeerId::from(peer_id),
                     address: addr,
                 }).await;
             }
@@ -267,14 +271,14 @@ impl Runtime {
                 for id in ids_to_remove {
                     self.streams.remove(&id);
                     let _ = self.event_tx.send(AviEvent::AudioStreamClosed {
-                        peer_id: PeerId::new(&peer_id.to_string()),
+                        peer_id: PeerId::from(peer_id),
                         stream_id: StreamId(id),
                         reason: StreamCloseReason::RemoteClose,
                     }).await;
                 }
 
                 let _ = self.event_tx.send(AviEvent::PeerDisconnected {
-                    peer_id: PeerId::new(&peer_id.to_string()),
+                    peer_id: PeerId::from(peer_id),
                 }).await;
             }
             _ => {}
@@ -282,7 +286,7 @@ impl Runtime {
     }
 
     async fn handle_audio_message(&mut self, peer: LibPeerId, msg: AudioStreamMessage) {
-        let peer_wrap = PeerId::new(&peer.to_string());
+        let peer_wrap = PeerId::from(peer);
 
         match msg {
             AudioStreamMessage::RequestStream { stream_id } => {
@@ -329,9 +333,10 @@ impl Runtime {
         }
     }
 
-    async fn emit_peer_discovered(&self, peer_id: LibPeerId) {
+    // FIX: Changed &self to &mut self to satisfy Send bounds for Future
+    async fn emit_peer_discovered(&mut self, peer_id: LibPeerId) {
         let _ = self.event_tx.send(AviEvent::PeerDiscovered {
-            peer_id: PeerId::new(&peer_id.to_string()),
+            peer_id: PeerId::from(peer_id),
         }).await;
     }
 }

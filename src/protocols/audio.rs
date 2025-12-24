@@ -1,4 +1,4 @@
-use libp2p::request_response::{Codec}; // Removed ProtocolName
+use libp2p::request_response::{self, Codec};
 use async_trait::async_trait;
 use futures::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -29,14 +29,13 @@ impl AudioStreamMessage {
 #[derive(Debug, Clone)]
 pub struct AviAudioProtocol;
 
-// In libp2p 0.53+, protocols are defined by types implementing AsRef<str>
 impl AsRef<str> for AviAudioProtocol {
     fn as_ref(&self) -> &str {
         "/avi/audio/1.0.0"
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)] // Added Default derive
 pub struct AviAudioCodec;
 
 #[async_trait]

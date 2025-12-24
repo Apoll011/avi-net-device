@@ -37,10 +37,11 @@ impl AviP2p {
     {
         // 1. Setup keys and identity
         let local_key = Keypair::generate_ed25519();
-        let local_peer_id = libp2p::PeerId::from(local_key.public());
+        // `local_peer_id` from local_key is now handled internally by SwarmBuilder and behaviour.
+        // The variable `local_peer_id` was unused, hence the warning.
 
         // 2. Setup Transport
-        let swarm = SwarmBuilder::with_existing_identity(local_key)
+        let swarm = SwarmBuilder::with_existing_identity(local_key.clone()) // Clone local_key for SwarmBuilder
             .with_tokio()
             .with_tcp(
                 tcp::Config::default(),
@@ -57,8 +58,9 @@ impl AviP2p {
                     .build()
                     .expect("Valid gossipsub config");
 
+                // Pass the actual keypair to the behaviour constructor
                 AviBehaviour::new(
-                    libp2p::PeerId::from(key.public()),
+                    key.clone(), // Pass the Keypair here (SwarmBuilder gives access to it)
                     gossip_config,
                     config.node_name.clone(),
                 )
@@ -120,69 +122,90 @@ impl AviP2p {
 }
 
 impl AviP2pHandle {
-    // --- PubSub ---
+    // ... (PubSub, Audio, Discovery methods unchanged)
+    // PubSub operations
 
-    pub async fn subscribe(&self, topic: &str) -> Result<(), AviP2pError> {
+    /// Subscribe to a topic
+    pub async fn subscribe(&self, topic: &str)
+                           -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::Subscribe { topic: topic.to_string(), respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn unsubscribe(&self, topic: &str) -> Result<(), AviP2pError> {
+    /// Unsubscribe from a topic
+    pub async fn unsubscribe(&self, topic: &str)
+                             -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::Unsubscribe { topic: topic.to_string(), respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn publish(&self, topic: &str, data: Vec<u8>) -> Result<(), AviP2pError> {
+    /// Publish a message to a topic
+    pub async fn publish(&self, topic: &str, data: Vec<u8>)
+                         -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::Publish { topic: topic.to_string(), data, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    // --- Audio ---
+    // Audio streaming operations
 
-    pub async fn request_audio_stream(&self, peer_id: PeerId) -> Result<StreamId, AviP2pError> {
+    /// Request to open an audio stream to a peer
+    /// Returns immediately with a StreamId
+    /// Wait for AudioStreamAccepted event before sending data
+    pub async fn request_audio_stream(&self, peer_id: PeerId)
+                                      -> Result<StreamId, AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::RequestAudioStream { peer_id, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn accept_audio_stream(&self, stream_id: StreamId) -> Result<(), AviP2pError> {
+    /// Accept an incoming audio stream request
+    pub async fn accept_audio_stream(&self, stream_id: StreamId)
+                                     -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::AcceptAudioStream { stream_id, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn send_audio(&self, stream_id: StreamId, data: Vec<u8>) -> Result<(), AviP2pError> {
+    /// Send audio data on an established stream
+    pub async fn send_audio(&self, stream_id: StreamId, data: Vec<u8>)
+                            -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::SendAudio { stream_id, data, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn close_audio_stream(&self, stream_id: StreamId) -> Result<(), AviP2pError> {
+    /// Close an audio stream
+    pub async fn close_audio_stream(&self, stream_id: StreamId)
+                                    -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::CloseAudioStream { stream_id, respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    // --- Discovery ---
+    // Discovery and queries
 
-    pub async fn connected_peers(&self) -> Result<Vec<PeerId>, AviP2pError> {
+    /// Get list of currently connected peers
+    pub async fn connected_peers(&self)
+                                 -> Result<Vec<PeerId>, AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::GetConnectedPeers { respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
-    pub async fn discover_peers(&self) -> Result<(), AviP2pError> {
+    /// Manually trigger peer discovery (Kademlia bootstrap)
+    pub async fn discover_peers(&self)
+                                -> Result<(), AviP2pError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx.send(Command::DiscoverPeers { respond_to: tx })
             .await.map_err(|_| AviP2pError::ChannelClosed)?;

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::cmp::Ordering;
-use crate::events::PeerId;
 
 /// Logical timestamp for causal ordering
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use futures::StreamExt;
 use tracing::{info};
 use std::cmp::Ordering;
+use std::time::Duration;
 
 use libp2p::{
     Swarm,
@@ -13,6 +14,7 @@ use libp2p::{
     mdns,
     identify,
     request_response,
+    Multiaddr
 };
 
 use crate::behaviour::{AviBehaviour, AviBehaviourEvent};
@@ -69,6 +71,7 @@ pub struct Runtime {
     context_store: HashMap<String, AviContext>,
     local_context: AviContext,
 
+    known_peers: HashMap<LibPeerId, Multiaddr>,
 }
 
 impl Runtime {
@@ -93,12 +96,23 @@ impl Runtime {
             // New fields
             context_store: HashMap::new(),
             local_context,
+            known_peers: HashMap::new(),
         }
     }
 
     pub async fn run(mut self) {
+        let mut heartbeat = tokio::time::interval(Duration::from_secs(5));
+
         loop {
             tokio::select! {
+                _ = heartbeat.tick() => {
+                    for (peer_id, addr) in &self.known_peers {
+                        if !self.swarm.is_connected(peer_id) {
+                            let _ = self.swarm.dial(addr.clone());
+                        }
+                    }
+                }
+
                 cmd = self.command_rx.recv() => {
                     match cmd {
                         Some(c) => self.handle_command(c).await,
@@ -276,7 +290,11 @@ impl Runtime {
             SwarmEvent::Behaviour(AviBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                 for (peer_id, multiaddr) in list {
                     self.swarm.behaviour_mut().kad.add_address(&peer_id, multiaddr.clone());
-                    if let Err(_e) = self.swarm.dial(multiaddr) {}
+                    self.known_peers.insert(peer_id, multiaddr.clone());
+
+                    if !self.swarm.is_connected(&peer_id) {
+                        if let Err(_e) = self.swarm.dial(multiaddr) {}
+                    }
 
                     self.emit_peer_discovered(peer_id).await;
                 }
@@ -285,7 +303,9 @@ impl Runtime {
             SwarmEvent::Behaviour(AviBehaviourEvent::Identify(identify::Event::Received { peer_id, info })) => {
                 self.emit_peer_discovered(peer_id).await;
                 for addr in info.listen_addrs {
-                    self.swarm.behaviour_mut().kad.add_address(&peer_id, addr);
+                    self.swarm.behaviour_mut().kad.add_address(&peer_id, addr.clone());
+
+                    self.known_peers.insert(peer_id, addr);
                 }
             }
 

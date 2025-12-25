@@ -188,6 +188,25 @@ impl AviDevice {
         self.handler.subscribe(topic).await
     }
 
+    pub async fn subscribe_async<F, Fut>(&self, topic: &str, handler: F) -> Result<(), AviP2pError>
+    where
+        F: Fn(PeerId, String, Vec<u8>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output=()> + Send + 'static,
+    {
+        {
+            let mut handlers = self.subscription_handlers.write().await;
+            let handler = Arc::new(handler);
+            let wrapper: Arc<dyn Fn(PeerId, String, Vec<u8>) + Send + Sync> = Arc::new(move |peer_id, topic, data| {
+                let handler = handler.clone();
+                tokio::spawn(async move {
+                    handler(peer_id, topic, data).await;
+                });
+            });
+            handlers.insert(topic.to_string(), wrapper);
+        }
+        self.handler.subscribe(topic).await
+    }
+
     pub async fn update_ctx(&self, path: &str, value: serde_json::Value) -> Result<(), AviP2pError> {
         let mut current_ctx = self.get_ctx("").await?;
 

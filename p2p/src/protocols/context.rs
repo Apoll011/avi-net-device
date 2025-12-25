@@ -69,10 +69,9 @@ impl AviContext {
     pub fn new(device_id: String) -> Self {
         // Initialize with empty skeleton based on your schema
         let data = serde_json::json!({
-            "environment": {},
-            "device": {},
-            "user": {},
-            "task": {}
+            "avi":  {
+                "device": {},
+            }
         });
 
         Self {

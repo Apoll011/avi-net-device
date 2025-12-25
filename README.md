@@ -73,6 +73,7 @@ Detailed examples for each major functionality can be found in the `examples/` d
 *   **`device_context.rs`**: Shows how to use the Distributed Context (CRDTs) with nested paths.
 *   **`device_query.rs`**: How to define device capabilities and query them across the network.
 *   **`device_stream.rs`**: Setting up custom stream handlers for real-time data transfer.
+*   **`device_chat.rs`**: A comprehensive CLI-based chat application that uses all features (Pub/Sub, Context, Query, and Streams).
 
 To run an example:
 ```bash

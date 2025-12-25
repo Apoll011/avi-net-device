@@ -268,4 +268,9 @@ impl AviDevice {
     pub async fn close_stream(&self, stream_id: StreamId) -> Result<(), String> {
         self.stream_dispatcher.close_stream(stream_id).await
     }
+
+    pub async fn send_stream_data(&self, stream_id: StreamId, data: Vec<u8>) -> Result<(), String> {
+        self.handler.send_stream_data(stream_id, data).await
+            .map_err(|e| e.to_string())
+    }
 }

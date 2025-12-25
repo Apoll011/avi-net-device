@@ -140,7 +140,7 @@ impl StreamDispatcher {
 
     pub async fn handle_stream_data(
         &self,
-        from: PeerId,
+        _from: PeerId,
         stream_id: StreamId,
         data: Vec<u8>,
     ) -> Result<(), String> {
@@ -161,7 +161,7 @@ impl StreamDispatcher {
 
     pub async fn handle_stream_closed(
         &self,
-        peer_id: PeerId,
+        _peer_id: PeerId,
         stream_id: StreamId,
         reason: StreamCloseReason,
     ) -> Result<(), String> {

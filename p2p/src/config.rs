@@ -1,6 +1,3 @@
-use std::sync::atomic::Ordering;
-use crate::AviEvent;
-
 #[derive(Clone, Debug)]
 pub struct AviP2pConfig {
     /// Identity name for the node (used in Identify protocol)

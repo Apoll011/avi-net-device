@@ -18,9 +18,12 @@ struct DeviceSession {
 }
 
 pub struct EmbeddedBridge {
+    #[allow(dead_code)]
     socket: Arc<UdpSocket>,
+    #[allow(dead_code)]
     handle: AviP2pHandle,
 
+    #[allow(dead_code)]
     sessions: Arc<Mutex<HashMap<SocketAddr, DeviceSession>>>,
 }
 

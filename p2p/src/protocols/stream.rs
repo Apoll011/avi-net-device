@@ -58,19 +58,6 @@ pub enum StreamMessage {
     SyncContext(super::context::AviContext),
 }
 
-impl StreamMessage {
-    pub fn stream_id(&self) -> Option<StreamId> {
-        match self {
-            Self::RequestStream { stream_id, .. } => Some(StreamId(*stream_id)),
-            Self::AcceptStream { stream_id } => Some(StreamId(*stream_id)),
-            Self::RejectStream { stream_id, .. } => Some(StreamId(*stream_id)),
-            Self::StreamData { stream_id, .. } => Some(StreamId(*stream_id)),
-            Self::CloseStream { stream_id } => Some(StreamId(*stream_id)),
-            Self::SyncContext(_) => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct AviStreamProtocol;
 

@@ -1,12 +1,13 @@
 #![no_std]
 
+use core::future::Future;
 use avi_p2p_protocol::{UplinkMessage, DownlinkMessage, PressType, SensorValue};
 use serde::Serialize;
 
 pub trait UdpClient {
     type Error;
-    async fn send(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
-    async fn receive(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error>;
+    fn send(&mut self, buf: &[u8]) -> impl Future<Output = Result<(), Self::Error>>;
+    fn receive(&mut self, buf: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
 }
 
 pub struct AviEmbeddedConfig {

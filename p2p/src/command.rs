@@ -54,6 +54,7 @@ pub enum Command {
     },
 
     // Lifecycle
+    #[allow(dead_code)]
     Shutdown {
         respond_to: oneshot::Sender<Result<(), AviP2pError>>
     },
@@ -64,7 +65,8 @@ pub enum Command {
     },
 
     GetPeerContext {
-        peer_id: Option<PeerId>, // None = Get All / Self
+        #[allow(dead_code)]
+        peer_id: Option<PeerId>,
         respond_to: oneshot::Sender<Result<Value, AviP2pError>>
     },
 }

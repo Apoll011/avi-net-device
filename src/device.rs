@@ -31,6 +31,7 @@ pub struct AviDeviceConfig {
 pub struct AviDevice {
     config: Arc<AviDeviceConfig>,
 
+    #[allow(dead_code)]
     node: Arc<Mutex<Option<AviP2p>>>,
     events: Arc<Mutex<Option<Receiver<AviEvent>>>>,
     handler: AviP2pHandle,
@@ -99,7 +100,7 @@ impl AviDevice {
                 }
             },
 
-            AviEvent::ContextUpdated { peer_id, context } => {},
+            AviEvent::ContextUpdated { .. } => {},
             AviEvent::StreamRejected { peer_id, stream_id, reason } => {
                 if let Err(e) = self.stream_dispatcher.handle_stream_rejected(peer_id, stream_id, reason).await {
                     eprintln!("Error handling stream rejected: {}", e);

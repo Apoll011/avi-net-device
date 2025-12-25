@@ -2,8 +2,51 @@ use libp2p::request_response::Codec;
 use async_trait::async_trait;
 use futures::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::io;
-use crate::events::StreamId;
+use std::{fmt, io};
+use std::sync::atomic::AtomicU64;
+use libp2p::{
+    PeerId as LibPeerId
+};
+
+static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
+
+pub fn generate_stream_id() -> StreamId {
+    StreamId(NEXT_STREAM_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+}
+
+
+pub enum StreamStatus {
+    Requested,
+    #[allow(dead_code)]
+    Accepted,
+    #[allow(dead_code)]
+    Active,
+}
+
+pub struct StreamState {
+    pub peer: LibPeerId,
+    #[allow(dead_code)]
+    pub reason: String,
+    #[allow(dead_code)]
+    pub status: StreamStatus,
+    #[allow(dead_code)]
+    pub direction: StreamDirection,
+}
+
+#[derive(PartialEq)]
+pub enum StreamDirection {
+    Inbound,
+    Outbound,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct StreamId(pub u64);
+
+impl fmt::Display for StreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StreamMessage {

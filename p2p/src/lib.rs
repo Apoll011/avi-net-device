@@ -16,12 +16,12 @@ mod node;
 mod protocols;
 mod runtime;
 mod error;
-mod context;
 pub mod bridge;
 
 pub use config::AviP2pConfig;
 pub use error::{AviP2pError, StreamCloseReason};
-pub use events::{AviEvent, PeerId, StreamId};
+pub use events::{AviEvent, PeerId};
+pub use protocols::stream::{StreamId, StreamStatus, StreamState, generate_stream_id, StreamDirection};
 pub use node::{AviP2p, AviP2pHandle};
-pub use context::{AviContext, VectorClock};
-pub use bridge::{EmbeddedBridge, BridgeConfig};
+pub use protocols::context::{AviContext, VectorClock};
+pub use bridge::{BridgeConfig, EmbeddedBridge};

@@ -1,10 +1,11 @@
 use tokio::sync::{mpsc, oneshot};
 use crate::config::AviP2pConfig;
 use crate::error::AviP2pError;
-use crate::events::{AviEvent, PeerId, StreamId};
+use crate::events::{AviEvent, PeerId};
 use crate::command::Command;
 use crate::behaviour::AviBehaviour;
 use crate::runtime::Runtime;
+use crate::StreamId;
 
 use libp2p::{
     gossipsub,

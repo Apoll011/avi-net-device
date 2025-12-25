@@ -1,5 +1,6 @@
 use thiserror::Error;
-use crate::events::{PeerId, StreamId};
+use crate::events::{PeerId};
+use crate::StreamId;
 
 #[derive(Debug, Clone, Error)]
 pub enum AviP2pError {

@@ -37,16 +37,8 @@ impl TryFrom<PeerId> for libp2p::PeerId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct StreamId(pub u64);
-
-impl fmt::Display for StreamId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 use crate::error::StreamCloseReason;
+use crate::StreamId;
 
 #[derive(Debug, Clone)]
 pub enum AviEvent {

@@ -1,7 +1,8 @@
 use serde_json::Value;
 use tokio::sync::oneshot;
-use crate::events::{PeerId, StreamId};
+use crate::events::{PeerId};
 use crate::error::AviP2pError;
+use crate::StreamId;
 
 #[derive(Debug)]
 pub enum Command {

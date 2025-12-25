@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64};
 use tokio::sync::mpsc;
 use futures::StreamExt;
 use tracing::{info};
@@ -19,44 +18,15 @@ use libp2p::{
 
 use crate::behaviour::{AviBehaviour, AviBehaviourEvent};
 use crate::command::Command;
-use crate::events::{AviEvent, PeerId, StreamId};
+use crate::events::{AviEvent, PeerId};
 use crate::error::{AviP2pError, StreamCloseReason};
 use crate::protocols::stream::StreamMessage;
-use crate::context::{AviContext};
-
-static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
-
-fn generate_stream_id() -> StreamId {
-    StreamId(NEXT_STREAM_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
-}
+use crate::protocols::context::{AviContext};
+use crate::{generate_stream_id, StreamDirection, StreamId, StreamState, StreamStatus};
 
 struct PeerState {
     #[allow(dead_code)]
     addr: Option<String>,
-}
-
-enum StreamStatus {
-    Requested,
-    #[allow(dead_code)]
-    Accepted,
-    #[allow(dead_code)]
-    Active,
-}
-
-struct StreamState {
-    peer: LibPeerId,
-    #[allow(dead_code)]
-    reason: String,
-    #[allow(dead_code)]
-    status: StreamStatus,
-    #[allow(dead_code)]
-    direction: StreamDirection,
-}
-
-#[derive(PartialEq)]
-enum StreamDirection {
-    Inbound,
-    Outbound,
 }
 
 pub struct Runtime {

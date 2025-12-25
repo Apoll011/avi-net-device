@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Case A: Someone is calling us
                 AviEvent::StreamRequested { from, stream_id, reason } => {
-                    println!("\n📞 INCOMING CALL from {} (Stream {})", from, stream_id);
+                    println!("\n📞 INCOMING CALL from {} reason: {} (Stream {})", from, reason, stream_id);
                     println!("   Auto-accepting call...");
 
                     if let Err(e) = handle_clone.accept_stream(stream_id).await {

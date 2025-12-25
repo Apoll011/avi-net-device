@@ -43,6 +43,7 @@ async fn main() -> Result<(), String> {
     let config = AviDeviceConfig {
         node_name: "stream-node".to_string(),
         device_type: AviDeviceType::NODE,
+        can_gateway_embedded: true,
         capabilities: DeviceCapabilities::default(),
     };
 

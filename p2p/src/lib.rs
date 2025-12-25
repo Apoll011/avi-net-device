@@ -24,4 +24,5 @@ pub use events::{AviEvent, PeerId};
 pub use protocols::stream::{StreamId, StreamStatus, StreamState, generate_stream_id, StreamDirection};
 pub use node::{AviP2p, AviP2pHandle};
 pub use protocols::context::{AviContext, VectorClock};
+pub use protocols::context::{set_nested_value};
 pub use bridge::{BridgeConfig, EmbeddedBridge};

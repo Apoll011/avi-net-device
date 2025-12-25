@@ -83,6 +83,7 @@ async fn main() -> Result<(), String> {
         node_name,
         device_type: AviDeviceType::NODE,
         capabilities: caps,
+        can_gateway_embedded: true,
     };
 
     let device = AviDevice::new(config).await?;
@@ -151,16 +152,19 @@ async fn main() -> Result<(), String> {
                     println!("Local Context Keys: {:?}", ctx.as_object().map(|o| o.keys().collect::<Vec<_>>()));
                 }
             }
-            "pub" => {
-                if parts.len() < 2 {
-                    println!("Usage: pub <message>");
-                } else {
-                    let msg = parts[1..].join(" ");
-                    if let Err(e) = device.publish("global", msg.into_bytes()).await {
-                        println!("Failed to publish: {}", e);
-                    }
+            "sub" if parts.len() > 1 => {
+                if let Err(e) = device.subscribe(parts[1], |from, _topic, data| println!("Got from {from} data: {:?}", data)).await {
+                    println!("Failed to subscribe: {}", e);
                 }
-            }
+                println!("Subscribed to '{}'", parts[1]);
+            },
+            "pub" if parts.len() > 2 => {
+                let topic = parts[1];
+                let content = parts[2..].join(" ");
+                if let Err(e) = device.publish(topic, content.into_bytes()).await {
+                    println!("Failed to publish: {}", e);
+                }
+            },
             "set" => {
                 if parts.len() < 3 {
                     println!("Usage: set <path> <value>");

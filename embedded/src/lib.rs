@@ -31,6 +31,7 @@ impl<'a, S: UdpClient> AviEmbedded<'a, S> {
         }
     }
 
+    //TODO: Is connecting to nothing and returning true
     pub async fn connect(&mut self) -> Result<(), S::Error> {
         // 1. Send Hello
         let hello = UplinkMessage::Hello { device_id: self.config.device_id };

@@ -25,6 +25,7 @@ async fn main() -> Result<(), String> {
     let config = AviDeviceConfig {
         node_name: "smart-sensor-01".to_string(),
         device_type: AviDeviceType::NODE,
+        can_gateway_embedded: false,
         capabilities: caps,
     };
 

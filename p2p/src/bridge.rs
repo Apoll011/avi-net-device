@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use serde_json::json;
 use tokio::sync::Mutex;
-use crate::{AviP2pHandle, PeerId, StreamId};
+use crate::{set_nested_value, AviP2pHandle, PeerId, StreamId};
 use avi_p2p_protocol::{UplinkMessage, DownlinkMessage, MAX_PACKET_SIZE};
 
 pub struct BridgeConfig {
@@ -74,8 +74,6 @@ impl EmbeddedBridge {
 
         match msg {
             UplinkMessage::Hello { device_id } => {
-                println!("New Device Connected: ID {} at {}", device_id, addr);
-
                 sessions_lock.insert(addr, DeviceSession {
                     device_id,
                     active_streams: HashMap::new(),
@@ -120,7 +118,6 @@ impl EmbeddedBridge {
                 if let Some(session) = sessions_lock.get_mut(&addr) {
                     if let Some(mesh_id) = session.active_streams.remove(&local_stream_id) {
                         let _ = handle.close_stream(mesh_id).await;
-                        println!("Closed Bridged Stream");
                     }
                 }
             }
@@ -139,7 +136,6 @@ impl EmbeddedBridge {
                             .unwrap_or_default().as_secs()
                     });
 
-                    println!("[Bridge] Button {} ({:?}) -> {}", button_id, press_type, topic);
                     let _ = handle.publish(&topic, serde_json::to_vec(&payload).unwrap()).await;
                 }
             },
@@ -148,7 +144,7 @@ impl EmbeddedBridge {
                 if let Some(session) = sessions_lock.get(&addr) {
                     let dev_id = session.device_id;
 
-                    let topic = format!("avi/device_{}/sensor/", dev_id);
+                    let topic = format!("sensor_update/device_{}/", dev_id);
                     
                     let val = match data {
                         avi_p2p_protocol::SensorValue::Temperature(v) => json!(v),
@@ -173,8 +169,20 @@ impl EmbeddedBridge {
                            .unwrap_or_default().as_secs()
                     });
 
-                    println!("[Bridge] Sensor {} -> {}", sensor_name, topic);
                     let _ = handle.publish(&topic, serde_json::to_vec(&payload).unwrap()).await;
+
+                    match handle.get_ctx("").await {
+                        Ok(v) => {
+                            let mut current_ctx = v;
+
+                            match set_nested_value(&mut current_ctx, &format!("avi.sensors.{}.{}", dev_id, sensor_name), payload) {
+                                Ok(..) => handle.update_context(current_ctx).await.unwrap_or_else(|_| println!("Failed to update context")),
+                                Err(e) => eprintln!("Failed to update context: {}", e)
+                            }
+
+                        }
+                        Err(e) => eprintln!("Failed to get current context: {}", e),
+                    }
 
                     // TODO: Update the CRDT Context automatically
                 }

@@ -208,6 +208,26 @@ impl AviP2pHandle {
             .await.map_err(|_| AviP2pError::ChannelClosed)?;
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
+
+    pub async fn get_ctx(&self, path: &str) -> Result<serde_json::Value, AviP2pError> {
+        match self.get_context(None).await {
+            Ok(data) => {
+                if path.is_empty() {
+                    return Ok(data);
+                }
+                let keys: Vec<&str> = path.split('.').collect();
+                let mut current = &data;
+
+                for key in keys {
+                    current = current.get(key).ok_or_else(|| {
+                        AviP2pError::Serialization(format!("Key '{}' not found in context", key))
+                    })?;
+                }
+                Ok(current.clone())
+            }
+            Err(e) => Err(e)
+        }
+    }
 }
 
 fn extract_peer_id_from_multiaddr(ma: &Multiaddr) -> Option<libp2p::PeerId> {

@@ -9,6 +9,7 @@ async fn main() -> Result<(), String> {
     let config = AviDeviceConfig {
         node_name: "example-pubsub-node".to_string(),
         device_type: AviDeviceType::NODE,
+        can_gateway_embedded: false,
         capabilities: DeviceCapabilities::default(),
     };
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::cmp::Ordering;
+use crate::AviP2pError;
 
 /// Logical timestamp for causal ordering
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -177,6 +178,44 @@ fn deep_merge(a: &mut serde_json::Value, b: serde_json::Value, prefer_a: bool) {
     }
 }
 
+pub fn set_nested_value(data: &mut serde_json::Value, path: &str, new_value: serde_json::Value) -> Result<(), AviP2pError> {
+    let keys: Vec<&str> = path.split('.').collect();
+
+    if keys.is_empty() || (keys.len() == 1 && keys[0].is_empty()) {
+        *data = new_value;
+        return Ok(());
+    }
+
+    if !data.is_object() {
+        *data = serde_json::Value::Object(serde_json::Map::new());
+    }
+
+    let mut current = data;
+
+    for (i, &key) in keys.iter().enumerate() {
+        let is_last = i == keys.len() - 1;
+
+        if is_last {
+            if let Some(obj) = current.as_object_mut() {
+                obj.insert(key.to_string(), new_value);
+                return Ok(());
+            } else {
+                return Err(AviP2pError::InvalidPath("Parent is not an object".to_string()));
+            }
+        } else {
+            if current.get(key).is_none() {
+                if let Some(obj) = current.as_object_mut() {
+                    obj.insert(key.to_string(), serde_json::Value::Object(serde_json::Map::new()));
+                }
+            }
+
+            current = current.get_mut(key)
+                .ok_or_else(|| AviP2pError::InvalidPath(format!("Failed to navigate to key: {}", key)))?;
+        }
+    }
+
+    Err(AviP2pError::InvalidPath("Unexpected end of path".to_string()))
+}
 fn merge_json(a: &mut serde_json::Value, b: serde_json::Value) {
     deep_merge(a, b, false);
 }

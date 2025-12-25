@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{RwLock, Mutex};
-use avi_p2p::{AviEvent, AviP2p, AviP2pConfig, AviP2pError, AviP2pHandle, PeerId, StreamId};
+use avi_p2p::{set_nested_value, AviEvent, AviP2p, AviP2pConfig, AviP2pError, AviP2pHandle, BridgeConfig, EmbeddedBridge, PeerId, StreamId};
 use crate::capability::DeviceCapabilities;
 use crate::DeviceQuery;
 use crate::stream::{StreamDispatcher, StreamHandlerFactory};
@@ -23,6 +23,8 @@ impl Default for AviDeviceType {
 pub struct AviDeviceConfig {
     pub node_name: String,
     pub device_type: AviDeviceType,
+
+    pub can_gateway_embedded: bool,
 
     pub capabilities: DeviceCapabilities,
 }
@@ -46,15 +48,27 @@ pub struct AviDevice {
 impl AviDevice {
     pub async fn new(config: AviDeviceConfig) -> Result<Self, String> {
         match AviP2p::start(AviP2pConfig::new(&config.node_name)).await {
-            Ok((node, events)) => Ok(Self {
-                config: Arc::new(config),
-                handler: node.handle(),
-                stream_dispatcher: Arc::new(StreamDispatcher::new(node.handle())),
-                node: Arc::new(Mutex::new(Some(node))),
-                events: Arc::new(Mutex::new(Some(events))),
-                peer_id: Arc::new(RwLock::new(None)),
-                subscription_handlers: Arc::new(RwLock::new(HashMap::new())),
-            }),
+            Ok((node, events)) =>{
+                if config.can_gateway_embedded {
+                    match EmbeddedBridge::start(
+                        node.handle(),
+                        BridgeConfig { udp_port: 8888 }
+                    ).await {
+                        Ok(..) => {},
+                        Err(e) => println!("Failed to start embedded bridge: {}", e)
+                    }
+                }
+
+                Ok(Self {
+                    config: Arc::new(config),
+                    handler: node.handle(),
+                    stream_dispatcher: Arc::new(StreamDispatcher::new(node.handle())),
+                    node: Arc::new(Mutex::new(Some(node))),
+                    events: Arc::new(Mutex::new(Some(events))),
+                    peer_id: Arc::new(RwLock::new(None)),
+                    subscription_handlers: Arc::new(RwLock::new(HashMap::new())),
+                })
+            },
             Err(e) => Err(format!("Failed to start AVI P2P node: {}", e))
         }
     }
@@ -131,44 +145,6 @@ impl AviDevice {
             }
         };
     }
-    fn set_nested_value(data: &mut serde_json::Value, path: &str, new_value: serde_json::Value) -> Result<(), AviP2pError> {
-        let keys: Vec<&str> = path.split('.').collect();
-
-        if keys.is_empty() || (keys.len() == 1 && keys[0].is_empty()) {
-            *data = new_value;
-            return Ok(());
-        }
-
-        if !data.is_object() {
-            *data = serde_json::Value::Object(serde_json::Map::new());
-        }
-
-        let mut current = data;
-
-        for (i, &key) in keys.iter().enumerate() {
-            let is_last = i == keys.len() - 1;
-
-            if is_last {
-                if let Some(obj) = current.as_object_mut() {
-                    obj.insert(key.to_string(), new_value);
-                    return Ok(());
-                } else {
-                    return Err(AviP2pError::InvalidPath("Parent is not an object".to_string()));
-                }
-            } else {
-                if current.get(key).is_none() {
-                    if let Some(obj) = current.as_object_mut() {
-                        obj.insert(key.to_string(), serde_json::Value::Object(serde_json::Map::new()));
-                    }
-                }
-
-                current = current.get_mut(key)
-                    .ok_or_else(|| AviP2pError::InvalidPath(format!("Failed to navigate to key: {}", key)))?;
-            }
-        }
-
-        Err(AviP2pError::InvalidPath("Unexpected end of path".to_string()))
-    }
     async fn update_capabilities(&self, local_peer_id: String) {
         match self.update_ctx(&format!("avi.device.caps.{}", local_peer_id), self.get_caps_as_json()).await {
             Ok(..) => {},
@@ -212,34 +188,17 @@ impl AviDevice {
         self.handler.subscribe(topic).await
     }
 
-    pub async fn get_ctx(&self, path: &str) -> Result<serde_json::Value, AviP2pError> {
-        match self.handler.get_context(None).await {
-            Ok(data) => {
-                if path.is_empty() {
-                    return Ok(data);
-                }
-                let keys: Vec<&str> = path.split('.').collect();
-                let mut current = &data;
-
-                for key in keys {
-                    current = current.get(key).ok_or_else(|| {
-                        AviP2pError::Serialization(format!("Key '{}' not found in context", key))
-                    })?;
-                }
-                Ok(current.clone())
-            }
-            Err(e) => Err(e)
-        }
-    }
-
     pub async fn update_ctx(&self, path: &str, value: serde_json::Value) -> Result<(), AviP2pError> {
         let mut current_ctx = self.get_ctx("").await?;
 
-        Self::set_nested_value(&mut current_ctx, path, value)?;
+        set_nested_value(&mut current_ctx, path, value)?;
 
         self.handler.update_context(current_ctx).await
     }
 
+    pub async fn get_ctx(&self, path: &str) -> Result<serde_json::Value, AviP2pError> {
+       self.handler.get_ctx(path).await
+    }
     pub async fn execute_query(&self, query: DeviceQuery) -> Result<Vec<String>, AviP2pError> {
         match serde_json::from_value(self.get_ctx("avi.device.caps").await?) {
             Ok(v) => Ok(query.execute(&v)),

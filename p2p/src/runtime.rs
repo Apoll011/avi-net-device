@@ -39,6 +39,7 @@ pub struct Runtime {
     topics: HashSet<String>,
     started: bool,
     discovered_peers: HashSet<LibPeerId>,
+    synced_peers: HashSet<LibPeerId>,
     local_context: AviContext,
 
     known_peers: HashMap<LibPeerId, Multiaddr>,
@@ -62,8 +63,8 @@ impl Runtime {
             topics: HashSet::new(),
             started: false,
             discovered_peers: HashSet::new(),
+            synced_peers: HashSet::new(),
 
-            // New fields
             local_context,
             known_peers: HashMap::new(),
         }
@@ -281,6 +282,17 @@ impl Runtime {
 
                     self.known_peers.insert(peer_id, addr);
                 }
+
+                // Sync context if they support our protocol
+                if info.protocols.iter().any(|p| p.to_string() == "/avi/stream/1.0.0") {
+                    if !self.synced_peers.contains(&peer_id) {
+                        self.synced_peers.insert(peer_id);
+                        self.swarm.behaviour_mut().stream.send_request(
+                            &peer_id,
+                            StreamMessage::SyncContext(self.local_context.clone())
+                        );
+                    }
+                }
             }
 
             // Connection ESTABLISHED
@@ -311,6 +323,7 @@ impl Runtime {
                 if num_established == 0 {
                     self.peers.remove(&peer_id);
                     self.discovered_peers.remove(&peer_id);
+                    self.synced_peers.remove(&peer_id);
 
                     let ids_to_remove: Vec<u64> = self.streams.iter()
                         .filter(|(_, state)| state.peer == peer_id)
@@ -358,8 +371,9 @@ impl Runtime {
             }
             SwarmEvent::Behaviour(AviBehaviourEvent::Stream(request_response::Event::Message { peer, message })) => {
                 match message {
-                    request_response::Message::Request { request, .. } => {
+                    request_response::Message::Request { request, channel, .. } => {
                         self.handle_stream_message(peer, request).await;
+                        let _ = self.swarm.behaviour_mut().stream.send_response(channel, ());
                     }
                     _ => {}
                 }
@@ -371,6 +385,15 @@ impl Runtime {
     async fn handle_stream_message(&mut self, peer: LibPeerId, msg: StreamMessage) {
         let peer_wrap = PeerId::from(peer);
         match msg {
+            StreamMessage::SyncContext(incoming_ctx) => {
+                let peer_id_str = incoming_ctx.device_id.clone();
+                if self.local_context.merge(incoming_ctx) {
+                    let _ = self.event_tx.send(AviEvent::ContextUpdated {
+                        peer_id: PeerId::new(&peer_id_str),
+                        context: self.local_context.data.clone(),
+                    }).await;
+                }
+            }
             StreamMessage::RequestStream { stream_id, reason } => {
                 self.streams.insert(stream_id, StreamState {
                     peer,
@@ -419,7 +442,6 @@ impl Runtime {
                     reason: StreamCloseReason::RemoteClose,
                 }).await;
             }
-            _ => {}
         }
     }
 

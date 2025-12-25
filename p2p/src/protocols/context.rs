@@ -67,7 +67,7 @@ impl VectorClock {
 
 /// The Core Context Object
 /// Designed to be flexible ("dict-like") using serde_json::Value
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AviContext {
     pub device_id: String,
     pub timestamp: u64, // Unix Timestamp
@@ -110,38 +110,73 @@ impl AviContext {
     pub fn merge(&mut self, other: AviContext) -> bool {
         let cmp = self.vector_clock.partial_cmp(&other.vector_clock);
 
-        let should_update = match cmp {
-            Some(Ordering::Less) => true,
-            Some(Ordering::Equal) | Some(Ordering::Greater) => false,
-            None => {
-                // Concurrent update, use timestamp as tie-breaker
-                other.timestamp > self.timestamp
+        match cmp {
+            Some(Ordering::Less) => {
+                // Other is strictly newer, but we still want to keep our unique data if any
+                // Wait, if it's strictly newer, it means it's an update to our state.
+                // However, the user said "if the new one has some data the old one dont have the old on add the missing data to jis"
+                // This suggests we should always deep merge.
+                let mut updated = false;
+                if self.data != other.data {
+                    deep_merge(&mut self.data, other.data, false); // prefer other
+                    updated = true;
+                }
+                self.timestamp = other.timestamp;
+                self.vector_clock.merge(&other.vector_clock);
+                updated
             }
-        };
+            Some(Ordering::Greater) => {
+                // We are strictly newer. Other might have some missing data?
+                // "if the new one has some data the old one dont have the old on add the missing data to jis"
+                // Even if we are newer, we should take missing keys from other.
+                if self.data != other.data {
+                    deep_merge(&mut self.data, other.data, true); // prefer self
+                    // No need to update timestamp/vector_clock as we are already newer
+                    true
+                } else {
+                    false
+                }
+            }
+            Some(Ordering::Equal) => false,
+            None => {
+                // Concurrent update, use "oldest wins" tie-breaker for data conflicts
+                let prefer_self = self.timestamp <= other.timestamp;
+                let mut updated = false;
 
-        if should_update {
-            self.data = other.data;
-            self.timestamp = other.timestamp;
-            self.vector_clock.merge(&other.vector_clock);
-            true
-        } else if cmp == Some(Ordering::Equal) {
-            false
-        } else {
-            // We still merge the vector clock even if we don't update data
-            // to ensure we "know" about the other peer's progress
-            self.vector_clock.merge(&other.vector_clock);
-            false
+                if self.data != other.data {
+                    deep_merge(&mut self.data, other.data, prefer_self);
+                    updated = true;
+                }
+
+                if !prefer_self {
+                    self.timestamp = other.timestamp;
+                }
+                self.vector_clock.merge(&other.vector_clock);
+                updated
+            }
+        }
+    }
+}
+
+fn deep_merge(a: &mut serde_json::Value, b: serde_json::Value, prefer_a: bool) {
+    match (a, b) {
+        (serde_json::Value::Object(a_obj), serde_json::Value::Object(b_obj)) => {
+            for (k, v) in b_obj {
+                if let Some(a_val) = a_obj.get_mut(&k) {
+                    deep_merge(a_val, v, prefer_a);
+                } else {
+                    a_obj.insert(k, v);
+                }
+            }
+        }
+        (a_val, b_val) => {
+            if !prefer_a {
+                *a_val = b_val;
+            }
         }
     }
 }
 
 fn merge_json(a: &mut serde_json::Value, b: serde_json::Value) {
-    match (a, b) {
-        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
-            for (k, v) in b {
-                merge_json(a.entry(k).or_insert(serde_json::Value::Null), v);
-            }
-        }
-        (a, b) => *a = b,
-    }
+    deep_merge(a, b, false);
 }

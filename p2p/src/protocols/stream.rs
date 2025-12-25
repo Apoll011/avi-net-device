@@ -55,16 +55,18 @@ pub enum StreamMessage {
     RejectStream { stream_id: u64, reason: String },
     StreamData { stream_id: u64, data: Vec<u8> },
     CloseStream { stream_id: u64 },
+    SyncContext(super::context::AviContext),
 }
 
 impl StreamMessage {
-    pub fn stream_id(&self) -> StreamId {
+    pub fn stream_id(&self) -> Option<StreamId> {
         match self {
-            Self::RequestStream { stream_id, .. } => StreamId(*stream_id),
-            Self::AcceptStream { stream_id } => StreamId(*stream_id),
-            Self::RejectStream { stream_id, .. } => StreamId(*stream_id),
-            Self::StreamData { stream_id, .. } => StreamId(*stream_id),
-            Self::CloseStream { stream_id } => StreamId(*stream_id),
+            Self::RequestStream { stream_id, .. } => Some(StreamId(*stream_id)),
+            Self::AcceptStream { stream_id } => Some(StreamId(*stream_id)),
+            Self::RejectStream { stream_id, .. } => Some(StreamId(*stream_id)),
+            Self::StreamData { stream_id, .. } => Some(StreamId(*stream_id)),
+            Self::CloseStream { stream_id } => Some(StreamId(*stream_id)),
+            Self::SyncContext(_) => None,
         }
     }
 }
@@ -108,7 +110,7 @@ impl Codec for AviStreamCodec {
         let mut buffer = vec![0u8; len];
         io.read_exact(&mut buffer).await?;
 
-        bincode::deserialize(&buffer)
+        serde_json::from_slice(&buffer)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
@@ -132,24 +134,26 @@ impl Codec for AviStreamCodec {
     where
         T: AsyncWrite + Unpin + Send,
     {
-        let encoded = bincode::serialize(&req)
+        let encoded = serde_json::to_vec(&req)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         let len = (encoded.len() as u32).to_be_bytes();
         io.write_all(&len).await?;
         io.write_all(&encoded).await?;
+        io.flush().await?;
         Ok(())
     }
 
     async fn write_response<T>(
         &mut self,
         _: &Self::Protocol,
-        _io: &mut T,
+        io: &mut T,
         _res: Self::Response,
     ) -> io::Result<()>
     where
         T: AsyncWrite + Unpin + Send,
     {
+        io.flush().await?;
         Ok(())
     }
 }

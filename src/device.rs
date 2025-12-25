@@ -99,14 +99,7 @@ impl AviDevice {
                 }
             },
 
-            AviEvent::ContextUpdated { peer_id, context } => {
-                // This fires whenever a peer changes their state
-                println!("\n🔄 UPDATE from {}:", peer_id);
-                // Pretty-print the updated JSON
-                if let Ok(pretty) = serde_json::to_string_pretty(&context) {
-                    println!("{}", pretty);
-                }
-            },
+            AviEvent::ContextUpdated { peer_id, context } => {},
             AviEvent::StreamRejected { peer_id, stream_id, reason } => {
                 if let Err(e) = self.stream_dispatcher.handle_stream_rejected(peer_id, stream_id, reason).await {
                     eprintln!("Error handling stream rejected: {}", e);

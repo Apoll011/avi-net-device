@@ -53,6 +53,16 @@ impl VectorClock {
             Some(Ordering::Equal)
         }
     }
+
+    /// Merge another vector clock into this one by taking the maximum of each component
+    pub fn merge(&mut self, other: &Self) {
+        for (actor, &counter) in &other.0 {
+            let entry = self.0.entry(actor.clone()).or_insert(0);
+            if counter > *entry {
+                *entry = counter;
+            }
+        }
+    }
 }
 
 /// The Core Context Object
@@ -93,6 +103,35 @@ impl AviContext {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+    }
+
+    /// Merge another context into this one
+    /// Returns true if the context was updated
+    pub fn merge(&mut self, other: AviContext) -> bool {
+        let cmp = self.vector_clock.partial_cmp(&other.vector_clock);
+
+        let should_update = match cmp {
+            Some(Ordering::Less) => true,
+            Some(Ordering::Equal) | Some(Ordering::Greater) => false,
+            None => {
+                // Concurrent update, use timestamp as tie-breaker
+                other.timestamp > self.timestamp
+            }
+        };
+
+        if should_update {
+            self.data = other.data;
+            self.timestamp = other.timestamp;
+            self.vector_clock.merge(&other.vector_clock);
+            true
+        } else if cmp == Some(Ordering::Equal) {
+            false
+        } else {
+            // We still merge the vector clock even if we don't update data
+            // to ensure we "know" about the other peer's progress
+            self.vector_clock.merge(&other.vector_clock);
+            false
+        }
     }
 }
 

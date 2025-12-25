@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 use futures::StreamExt;
 use tracing::{info};
-use std::cmp::Ordering;
 use std::time::Duration;
 
 use libp2p::{
@@ -40,7 +39,6 @@ pub struct Runtime {
     topics: HashSet<String>,
     started: bool,
     discovered_peers: HashSet<LibPeerId>,
-    context_store: HashMap<String, AviContext>,
     local_context: AviContext,
 
     known_peers: HashMap<LibPeerId, Multiaddr>,
@@ -66,7 +64,6 @@ impl Runtime {
             discovered_peers: HashSet::new(),
 
             // New fields
-            context_store: HashMap::new(),
             local_context,
             known_peers: HashMap::new(),
         }
@@ -243,16 +240,8 @@ impl Runtime {
                 let _ = respond_to.send(Ok(()));
             }
 
-            Command::GetPeerContext { peer_id, respond_to } => {
-                let result = if let Some(pid) = peer_id {
-                    // Get remote peer context
-                    self.context_store.get(pid.as_str())
-                        .map(|c| c.data.clone())
-                        .ok_or(AviP2pError::PeerNotFound(pid))
-                } else {
-                    // Get self context
-                    Ok(self.local_context.data.clone())
-                };
+            Command::GetPeerContext { peer_id: _, respond_to } => {
+                let result = Ok(self.local_context.data.clone());
                 let _ = respond_to.send(result);
             }
         }
@@ -350,27 +339,11 @@ impl Runtime {
                     if let Ok(incoming_ctx) = serde_json::from_slice::<AviContext>(&message.data) {
                         let peer_id_str = incoming_ctx.device_id.clone();
 
-                        let should_update = match self.context_store.get(&peer_id_str) {
-                            Some(existing_ctx) => {
-                                match incoming_ctx.vector_clock.partial_cmp(&existing_ctx.vector_clock) {
-                                    Some(Ordering::Greater) => true, // Incoming is newer
-                                    None => {
-                                     incoming_ctx.timestamp > existing_ctx.timestamp
-                                    }
-                                    _ => false
-                                }
-                            },
-                            None => true
-                        };
-
-                        if should_update {
-                            // Update Store
-                            self.context_store.insert(peer_id_str.clone(), incoming_ctx.clone());
-
+                        if self.local_context.merge(incoming_ctx) {
                             // Notify User
                             let _ = self.event_tx.send(AviEvent::ContextUpdated {
                                 peer_id: PeerId::new(&peer_id_str),
-                                context: incoming_ctx.data,
+                                context: self.local_context.data.clone(),
                             }).await;
                         }
                     }

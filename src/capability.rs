@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeviceCapabilities {
     pub compute: Option<ComputeCapability>,
     pub sensors: HashMap<String, SensorCapability>,

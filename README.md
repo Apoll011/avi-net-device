@@ -50,17 +50,33 @@ async fn main() -> Result<(), String> {
     let mut device = AviDevice::new(config).await?;
 
     // 3. Start the event loop in a background task
-    let mut device_clone = device.clone(); // If AviDevice is cloneable, or use a handle pattern
+    let device_clone = device.clone();
     tokio::spawn(async move {
-        device.start_event_loop().await;
+        device_clone.start_event_loop().await;
     });
 
     // 4. Use the device
-    let peers = device_clone.get_peers().await.map_err(|e| e.to_string())?;
+    let peers = device.get_peers().await.map_err(|e| e.to_string())?;
     println!("Connected peers: {:?}", peers);
 
     Ok(())
 }
+```
+
+---
+
+## 📖 Examples
+
+Detailed examples for each major functionality can be found in the `examples/` directory:
+
+*   **`device_pubsub.rs`**: Demonstrates topic-based Publish/Subscribe.
+*   **`device_context.rs`**: Shows how to use the Distributed Context (CRDTs) with nested paths.
+*   **`device_query.rs`**: How to define device capabilities and query them across the network.
+*   **`device_stream.rs`**: Setting up custom stream handlers for real-time data transfer.
+
+To run an example:
+```bash
+cargo run --example device_pubsub
 ```
 
 ---
@@ -78,7 +94,7 @@ The main interface for interacting with the AVI network.
 *   **`update_ctx(path, value)`**: Update a piece of the distributed context (e.g., `"avi.device.status.volume"`).
 *   **`get_ctx(path)`**: Retrieve data from the context.
 *   **`request_stream(peer_id, reason)`**: Initiate a data stream to another peer.
-*   **`registe_stream_handler(reason, factory)`**: Register how to handle incoming or outgoing streams for a specific purpose.
+*   **`register_stream_handler(reason, factory)`**: Register how to handle incoming or outgoing streams for a specific purpose.
 
 ### `DeviceCapabilities` & `DeviceQuery`
 

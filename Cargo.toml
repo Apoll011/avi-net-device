@@ -15,6 +15,7 @@ members = [
 tokio = { version = "1.35", features = ["full"] }
 serde_json = "1.0.147"
 avi-p2p = { path = "./p2p" }
+serde = { version = "1.0.228", features = ["derive"] }
 
 [dev-dependencies]
 avi-p2p-protocol = { path = "./protocol" }

@@ -32,6 +32,12 @@ pub enum AviP2pError {
 
     #[error("Serialization Error: {0}")]
     Serialization(String),
+
+    #[error("Serialization Path Error: {0}")]
+    InvalidPath(String)
+}
+
+impl AviP2pError {
 }
 
 #[derive(Debug, Clone)]

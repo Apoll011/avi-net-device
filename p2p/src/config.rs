@@ -1,3 +1,6 @@
+use std::sync::atomic::Ordering;
+use crate::AviEvent;
+
 #[derive(Clone, Debug)]
 pub struct AviP2pConfig {
     /// Identity name for the node (used in Identify protocol)
@@ -22,6 +25,15 @@ pub struct AviP2pConfig {
     pub max_streams: usize,
 }
 
+impl AviP2pConfig {
+    pub fn new(node_name: &str) -> Self {
+        Self {
+            node_name: node_name.to_string(),
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for AviP2pConfig {
     fn default() -> Self {
         Self {
@@ -30,8 +42,8 @@ impl Default for AviP2pConfig {
             bootstrap_peers: vec![],
             enable_mdns: true,
             enable_kad: true,
-            max_peers: 50,
-            max_streams: 10,
+            max_peers: 10,
+            max_streams: 5,
         }
     }
 }

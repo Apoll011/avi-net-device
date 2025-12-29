@@ -54,6 +54,7 @@ impl AviP2p {
                     .heartbeat_interval(Duration::from_secs(1))
                     .validation_mode(gossipsub::ValidationMode::Strict)
                     .max_transmit_size(1024 * 1024)
+                    .allow_self_origin(true)
                     .build()
                     .expect("Valid gossipsub config");
 

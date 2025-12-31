@@ -242,6 +242,18 @@ impl AviDevice {
         self.handler.update_context(current_ctx).await
     }
 
+    pub async fn delete_ctx(&self, path: &str) -> Result<(), AviP2pError> {
+        self.handler.delete_ctx(path).await
+    }
+
+    pub async fn clear_ctx(&self) -> Result<(), AviP2pError> {
+        self.handler.clear_ctx().await
+    }
+
+    pub async fn has_ctx(&self, path: &str) -> Result<bool, AviP2pError> {
+        self.handler.has_ctx(path).await
+    }
+
     pub async fn get_ctx(&self, path: &str) -> Result<serde_json::Value, AviP2pError> {
        self.handler.get_ctx(path).await
     }

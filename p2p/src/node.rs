@@ -202,14 +202,21 @@ impl AviP2pHandle {
         rx.await.map_err(|_| AviP2pError::ChannelClosed)?
     }
 
+    pub async fn replace_context(&self, data: Value) -> Result<(), AviP2pError> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx.send(Command::ReplaceSelfContext { data, respond_to: tx })
+            .await.map_err(|_| AviP2pError::ChannelClosed)?;
+        rx.await.map_err(|_| AviP2pError::ChannelClosed)?
+    }
+
     pub async fn delete_ctx(&self, path: &str) -> Result<(), AviP2pError> {
         let mut current_ctx = self.get_ctx("").await?;
         crate::protocols::context::delete_nested_value(&mut current_ctx, path)?;
-        self.update_context(current_ctx).await
+        self.replace_context(current_ctx).await
     }
 
     pub async fn clear_ctx(&self) -> Result<(), AviP2pError> {
-        self.update_context(Value::Object(serde_json::Map::new())).await
+        self.replace_context(Value::Object(serde_json::Map::new())).await
     }
 
     pub async fn has_ctx(&self, path: &str) -> Result<bool, AviP2pError> {

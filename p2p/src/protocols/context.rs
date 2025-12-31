@@ -106,6 +106,15 @@ impl AviContext {
             .as_secs();
     }
 
+    pub fn replace_data(&mut self, data: serde_json::Value) {
+        self.data = data;
+        // Update timestamp on change
+        self.timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+    }
+
     /// Merge another context into this one
     /// Returns true if the context was updated
     pub fn merge(&mut self, other: AviContext) -> bool {
@@ -113,13 +122,11 @@ impl AviContext {
 
         match cmp {
             Some(Ordering::Less) => {
-                // Other is strictly newer, but we still want to keep our unique data if any
-                // Wait, if it's strictly newer, it means it's an update to our state.
-                // However, the user said "if the new one has some data the old one dont have the old on add the missing data to jis"
-                // This suggests we should always deep merge.
+                // Other is strictly newer, we should fully replace our data
+                // to allow for deletions to propagate.
                 let mut updated = false;
                 if self.data != other.data {
-                    deep_merge(&mut self.data, other.data, false); // prefer other
+                    self.data = other.data;
                     updated = true;
                 }
                 self.timestamp = other.timestamp;
@@ -129,10 +136,13 @@ impl AviContext {
             Some(Ordering::Greater) => {
                 // We are strictly newer. Other might have some missing data?
                 // "if the new one has some data the old one dont have the old on add the missing data to jis"
-                // Even if we are newer, we should take missing keys from other.
+                // Even if we are newer, the user requirement says we should take missing keys from other.
+                // However, if we want to support deletions, this "keep as much data as possible"
+                // might contradict with intended deletions from the newer state.
+                // But the issue description says: "But i dont want to loose that feature on update context"
+                // So for Ordering::Greater (we are newer), we keep the current behavior of deep_merge.
                 if self.data != other.data {
                     deep_merge(&mut self.data, other.data, true); // prefer self
-                    // No need to update timestamp/vector_clock as we are already newer
                     true
                 } else {
                     false

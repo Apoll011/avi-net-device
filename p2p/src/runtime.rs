@@ -241,6 +241,35 @@ impl Runtime {
                 let _ = respond_to.send(Ok(()));
             }
 
+            Command::ReplaceSelfContext { data, respond_to } => {
+                self.local_context.replace_data(data);
+
+                let my_id = self.local_context.device_id.clone();
+                self.local_context.vector_clock.increment(&my_id);
+
+                // Broadcast to Mesh
+                if let Ok(data) = serde_json::to_vec(&self.local_context) {
+                    let topic = gossipsub::IdentTopic::new("avi-context-updates");
+                    if !self.topics.contains("avi-context-updates") {
+                        let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
+                        self.topics.insert("avi-context-updates".to_string());
+                    }
+
+                    match self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                        Ok(_) => {}, // Success
+                        Err(gossipsub::PublishError::InsufficientPeers) => {
+                           info!("Context replaced locally (broadcasting postponed: no peers yet)");
+                        },
+                        Err(e) => {
+                            let _ = respond_to.send(Err(AviP2pError::NetworkError(e.to_string())));
+                            return;
+                        }
+                    }
+                }
+
+                let _ = respond_to.send(Ok(()));
+            }
+
             Command::GetPeerContext { peer_id: _, respond_to } => {
                 let result = Ok(self.local_context.data.clone());
                 let _ = respond_to.send(result);

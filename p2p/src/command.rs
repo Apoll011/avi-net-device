@@ -64,6 +64,11 @@ pub enum Command {
         respond_to: oneshot::Sender<Result<(), AviP2pError>>
     },
 
+    ReplaceSelfContext {
+        data: Value, // JSON full replacement
+        respond_to: oneshot::Sender<Result<(), AviP2pError>>
+    },
+
     GetPeerContext {
         #[allow(dead_code)]
         peer_id: Option<PeerId>,

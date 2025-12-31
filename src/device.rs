@@ -242,6 +242,14 @@ impl AviDevice {
         self.handler.update_context(current_ctx).await
     }
 
+    pub async fn replace_ctx(&self, path: &str, value: serde_json::Value) -> Result<(), AviP2pError> {
+        let mut current_ctx = self.get_ctx("").await?;
+
+        set_nested_value(&mut current_ctx, path, value)?;
+
+        self.handler.replace_context(current_ctx).await
+    }
+
     pub async fn delete_ctx(&self, path: &str) -> Result<(), AviP2pError> {
         self.handler.delete_ctx(path).await
     }

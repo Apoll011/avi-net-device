@@ -189,7 +189,7 @@ impl AviDevice {
     ///tokio::spawn(async move {
     ///   device.start_event_loop().await;
     ///});
-    pub async fn start_event_loop(&self) {
+    async fn __start_event_loop(&self) {
         let events = {
             let mut lock = self.events.lock().await;
             lock.take()
@@ -354,7 +354,7 @@ impl AviDevice {
     pub fn start_event_loop(self: &Arc<Self>) {
         let device = Arc::clone(self);
         tokio::spawn(async move {
-            device.start_event_loop().await;
+            device.__start_event_loop().await;
         });
     }
 }

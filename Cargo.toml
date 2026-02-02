@@ -8,6 +8,7 @@ description = "Device Comunication for AVI systems"
 members = [
     "protocol",
     "embedded",
+    "embedded-esp",
     "p2p"
 ]
 
@@ -22,3 +23,4 @@ futures = "0.3"
 [dev-dependencies]
 avi-p2p-protocol = { path = "./protocol" }
 avi-p2p-embedded = { path = "./embedded" }
+avi-p2p-embedded-esp = { path = "./embedded-esp" }

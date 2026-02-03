@@ -1,8 +1,12 @@
 #![no_std]
 
+use avi_p2p_protocol::{DownlinkMessage, PressType, SensorValue, UplinkMessage};
 use core::future::Future;
-use avi_p2p_protocol::{UplinkMessage, DownlinkMessage, PressType, SensorValue};
 use serde::Serialize;
+
+// C API module
+#[cfg(feature = "c-api")]
+pub mod c_api;
 
 pub trait UdpClient {
     type Error;
@@ -39,7 +43,9 @@ impl<'a, S: UdpClient, H: MessageHandler> AviEmbedded<'a, S, H> {
 
     pub async fn connect(&mut self) -> Result<(), S::Error> {
         // 1. Send Hello
-        let hello = UplinkMessage::Hello { device_id: self.config.device_id };
+        let hello = UplinkMessage::Hello {
+            device_id: self.config.device_id,
+        };
         self.send_packet(&hello).await?;
 
         let mut rx_buf = [0u8; 128];
@@ -75,11 +81,16 @@ impl<'a, S: UdpClient, H: MessageHandler> AviEmbedded<'a, S, H> {
     }
 
     // Stream Methods
-    pub async fn start_stream(&mut self, id: u8, target_peer: &str, reason: &str) -> Result<(), S::Error> {
+    pub async fn start_stream(
+        &mut self,
+        id: u8,
+        target_peer: &str,
+        reason: &str,
+    ) -> Result<(), S::Error> {
         let msg = UplinkMessage::StreamStart {
             local_stream_id: id,
             target_peer_id: target_peer,
-            reason
+            reason,
         };
         self.send_packet(&msg).await
     }
@@ -93,12 +104,18 @@ impl<'a, S: UdpClient, H: MessageHandler> AviEmbedded<'a, S, H> {
     }
 
     pub async fn close_stream(&mut self, id: u8) -> Result<(), S::Error> {
-        let msg = UplinkMessage::StreamClose { local_stream_id: id };
+        let msg = UplinkMessage::StreamClose {
+            local_stream_id: id,
+        };
         self.send_packet(&msg).await
     }
 
     // Event Methods
-    pub async fn button_pressed(&mut self, button_id: u8, press_type: PressType) -> Result<(), S::Error> {
+    pub async fn button_pressed(
+        &mut self,
+        button_id: u8,
+        press_type: PressType,
+    ) -> Result<(), S::Error> {
         let msg = UplinkMessage::ButtonPress {
             button_id,
             press_type,
@@ -117,7 +134,7 @@ impl<'a, S: UdpClient, H: MessageHandler> AviEmbedded<'a, S, H> {
     // Process incoming messages (call this in your main loop)
     pub async fn poll(&mut self) -> Result<(), S::Error> {
         let mut rx_buf = [0u8; 1024];
-        
+
         // Non-blocking receive with timeout
         match self.socket.receive(&mut rx_buf).await {
             Ok(len) => {
@@ -142,7 +159,7 @@ impl<'a, S: UdpClient, H: MessageHandler> AviEmbedded<'a, S, H> {
                 }
                 Ok(())
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 

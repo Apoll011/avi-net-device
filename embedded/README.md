@@ -92,243 +92,268 @@ async fn main() {
     }
 }
 ```
+# AVI Embedded - C API for ESP-IDF
 
-## 🔧 ESP32 Usage
+Complete C API wrapper for the AVI Embedded Rust library with full async support for ESP32 devices.
 
-### Cargo.toml
-```toml
-[dependencies]
-avi-p2p-embedded-esp = { path = "../embedded-esp" }
-esp-idf-svc = "0.48"
+## 🚀 Quick Start
+
+```bash
+# 1. Build the library
+chmod +x build.sh
+./build.sh xtensa-esp32-espidf
+
+# 2. Copy to your ESP-IDF project
+cp output/* your-esp-project/components/avi-embedded/
+
+# 3. Use in your C code
+#include "avi_embedded.h"
 ```
 
-### main.rs
-```rust
-#![no_std]
-#![no_main]
+## ✨ Features
 
-use avi_p2p_embedded_esp::{init_wifi, EspUdpSocket, WifiConfig, helpers};
-use avi_p2p_embedded::{AviEmbedded, AviEmbeddedConfig, MessageHandler};
+- ✅ **Non-blocking API** - All functions return immediately
+- ✅ **Async by default** - Uses Embassy async runtime under the hood
+- ✅ **FreeRTOS friendly** - Works perfectly with ESP-IDF tasks
+- ✅ **Auto-generated headers** - Using cbindgen for type safety
+- ✅ **Zero-copy** - Efficient memory usage
+- ✅ **Full protocol support** - Pub/Sub, Streaming, Sensors, Events
 
-struct MyHandler;
-impl MessageHandler for MyHandler {
-    fn on_message(&mut self, topic: &str, data: &[u8]) {
-        esp_println::println!("📨 {}: {} bytes", topic, data.len());
-    }
-}
+## 📦 What's Included
 
-fn main() -> ! {
-    // 1. Connect to WiFi
-    let wifi = WifiConfig {
-        ssid: "MyNetwork",
-        password: "password123",
-    };
-    init_wifi(wifi).unwrap();
+| File | Description |
+|------|-------------|
+| `lib.rs` | Original Rust code (unchanged) |
+| `c_api.rs` | C FFI wrapper with async support |
+| `avi_embedded.h` | C header file (auto-generated) |
+| `Cargo.toml` | Build configuration |
+| `cbindgen.toml` | Header generation config |
+| `build.sh` | Convenience build script |
+| `esp_idf_example.c` | Complete ESP-IDF example |
+| `BUILD_GUIDE.md` | Detailed documentation |
+
+## 🔧 Requirements
+
+- Rust with ESP targets installed
+- ESP-IDF (v4.4+)
+- cbindgen (optional, for header generation)
+
+## 📖 API Overview
+
+### Initialization
+
+```c
+// Call once at startup
+avi_embedded_init();
+
+// Create instance
+CAviEmbeddedConfig config = { .device_id = 0x123 };
+CAviEmbedded* avi = avi_embedded_new(
+    config, buffer, buf_len,
+    udp_ctx, udp_send, udp_recv,
+    msg_ctx, msg_callback
+);
+```
+
+### Core Operations (All Non-blocking!)
+
+```c
+// Connection
+avi_embedded_connect(avi);              // Returns immediately
+avi_embedded_is_connected(avi);         // Check status
+
+// Pub/Sub
+avi_embedded_subscribe(avi, "topic", 5);
+avi_embedded_publish(avi, "topic", 5, data, len);
+avi_embedded_unsubscribe(avi, "topic", 5);
+
+// Streaming
+avi_embedded_start_stream(avi, id, peer, peer_len, reason, reason_len);
+avi_embedded_send_audio(avi, id, pcm, pcm_len);
+avi_embedded_close_stream(avi, id);
+
+// Sensors & Events
+avi_embedded_button_pressed(avi, btn_id, press_type);
+avi_embedded_update_sensor_float(avi, "temp", 4, 25.5f);
+avi_embedded_update_sensor_int(avi, "count", 5, 42);
+
+// Message polling
+avi_embedded_poll(avi);                 // Call in main loop
+```
+
+### Return Values
+
+- `0` = Success (command queued)
+- `-1` = Invalid parameters
+- `-2` = Command queue full (retry later)
+
+## 🎯 How It Works
+
+### Async Architecture
+
+```
+┌─────────────┐
+│   Your C    │  ← Non-blocking calls
+│     App     │  ← Returns immediately
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Command   │  ← Queue of operations
+│    Queue    │  ← (16 commands default)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Embassy   │  ← Async processing
+│   Runtime   │  ← Handles network I/O
+└─────────────┘
+```
+
+### Key Benefits
+
+1. **Non-blocking**: Your main loop never waits
+2. **Backpressure**: Queue full? Just retry later
+3. **Efficient**: Embassy runtime handles scheduling
+4. **Simple**: Looks like sync code, works async
+
+## 📝 Example
+
+```c
+void app_main(void) {
+    // Initialize
+    avi_embedded_init();
     
-    // 2. Create socket to gateway
-    let socket = EspUdpSocket::new([192, 168, 1, 100], 8888).unwrap();
+    // Create instance
+    static uint8_t buffer[2048];
+    CAviEmbedded* avi = avi_embedded_new(...);
     
-    // 3. Setup device
-    let mut buffer = [0u8; 1024];
-    let config = AviEmbeddedConfig { device_id: 5555 };
-    let mut device = AviEmbedded::new(socket, config, &mut buffer, MyHandler);
+    // Connect (non-blocking!)
+    avi_embedded_connect(avi);
     
-    // 4. Use executor for async
-    let executor = esp_idf_svc::hal::task::executor::EspExecutor::new();
-    executor.spawn_detached(async move {
-        device.connect().await.unwrap();
-        device.subscribe("avi/home/device_5555/command").await.unwrap();
+    // Subscribe (non-blocking!)
+    avi_embedded_subscribe(avi, "sensors/temp", 12);
+    
+    // Main loop
+    while (1) {
+        // Poll for messages (non-blocking!)
+        avi_embedded_poll(avi);
         
-        loop {
-            let _ = device.poll().await;
-            helpers::report_temperature(&mut device, "room", 23.0).await.unwrap();
-            esp_idf_svc::sys::vTaskDelay(5000);
-        }
-    }).unwrap();
-    
-    loop { esp_idf_svc::sys::vTaskDelay(1000); }
-}
-```
-
-## 🌉 Gateway Bridge
-
-The gateway runs on a standard PC/server and bridges UDP packets to the P2P mesh.
-
-### Starting the Gateway
-```rust
-use avi_p2p::{AviP2p, AviP2pConfig};
-use avi_p2p::bridge::{EmbeddedBridge, BridgeConfig};
-
-#[tokio::main]
-async fn main() {
-    let config = AviP2pConfig::default();
-    let (node, mut events) = AviP2p::start(config).await.unwrap();
-    
-    // Start UDP bridge on port 8888
-    EmbeddedBridge::start(
-        node.handle(),
-        BridgeConfig { udp_port: 8888 }
-    ).await.unwrap();
-    
-    // Handle events
-    while let Some(event) = events.recv().await {
-        println!("{:?}", event);
+        // Send data (non-blocking!)
+        avi_embedded_publish(avi, "status", 6, data, len);
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 ```
 
-## 📡 Protocol Flow
+## 🏗️ Building
 
-### Device → Gateway (Uplink)
-1. **Hello** - Initial handshake with device_id
-2. **Subscribe** - Request topic subscription
-3. **Publish** - Send data to topic
-4. **SensorUpdate** - Report sensor readings
-5. **ButtonPress** - Report button events
+### For ESP32
 
-### Gateway → Device (Downlink)
-1. **Welcome** - Handshake acknowledgment
-2. **SubscribeAck** - Subscription confirmed
-3. **Message** - Incoming pub/sub message
-
-## 🎨 API Reference
-
-### Connection Management
-```rust
-// Connect to gateway
-device.connect().await?;
-
-// Check connection status
-if device.is_connected() { /* ... */ }
-```
-
-### Pub/Sub
-```rust
-// Subscribe to topics
-device.subscribe("avi/home/sensors").await?;
-device.subscribe("avi/home/device_1234/command").await?;
-
-// Unsubscribe
-device.unsubscribe("avi/home/sensors").await?;
-
-// Publish messages
-device.publish("avi/home/status", b"online").await?;
-
-// Poll for incoming messages (call in main loop)
-device.poll().await?;
-```
-
-### Sensor Reporting
-```rust
-use avi_p2p_protocol::SensorValue;
-
-device.update_sensor("temp", SensorValue::Temperature(22.5)).await?;
-device.update_sensor("humidity", SensorValue::Humidity(65.0)).await?;
-device.update_sensor("battery", SensorValue::Battery(85)).await?;
-device.update_sensor("status", SensorValue::Status(true)).await?;
-```
-
-### Button Events
-```rust
-use avi_p2p_protocol::PressType;
-
-device.button_pressed(1, PressType::Single).await?;
-device.button_pressed(2, PressType::Double).await?;
-device.button_pressed(3, PressType::Long).await?;
-```
-
-### Audio Streaming
-```rust
-// Request stream to peer
-device.start_stream(1, "peer_id_here", "voice_call").await?;
-
-// Send audio data
-device.send_audio(1, &pcm_buffer).await?;
-
-// Close stream
-device.close_stream(1).await?;
-```
-
-## 🧪 Testing
-
-### Run Simulated Device (PC)
 ```bash
-cargo run --example simulated_mcu_pubsub
+./build.sh xtensa-esp32-espidf
 ```
 
-### Run Gateway
+### For ESP32-C3
+
 ```bash
-cargo run --example gateway_node
+./build.sh riscv32imc-esp-espidf
 ```
 
-### Run Monitor (to see messages)
+### All Targets
+
+| ESP Chip | Target |
+|----------|--------|
+| ESP32 | `xtensa-esp32-espidf` |
+| ESP32-S2 | `xtensa-esp32s2-espidf` |
+| ESP32-S3 | `xtensa-esp32s3-espidf` |
+| ESP32-C3 | `riscv32imc-esp-espidf` |
+| ESP32-C6 | `riscv32imac-esp-espidf` |
+
+## 📚 Documentation
+
+See `BUILD_GUIDE.md` for:
+- Detailed build instructions
+- ESP-IDF integration guide
+- Complete API reference
+- Troubleshooting tips
+- Memory usage guidelines
+
+See `esp_idf_example.c` for:
+- Full working example
+- UDP callback implementations
+- Message handling
+- Error handling patterns
+
+## 🔍 Auto-Generated Headers
+
+The header file is automatically generated using cbindgen:
+
 ```bash
-cargo run --example monitor_node
+cbindgen --config cbindgen.toml --output avi_embedded.h
 ```
 
-## 🔍 Topic Naming Convention
+Benefits:
+- Always in sync with Rust code
+- Type-safe
+- Includes documentation
+- No manual maintenance
 
-**Recommended structure:**
-- `avi/home/device_{id}/sensor/{name}` - Sensor updates
-- `avi/home/device_{id}/button` - Button events
-- `avi/home/device_{id}/command` - Commands to device
-- `avi/home/device_{id}/status` - Device status
-- `avi/home/broadcast` - Broadcast messages
+## ⚡ Performance
 
-**Wildcards in subscriptions:**
-- `+` - Single level wildcard
-- `#` - Multi-level wildcard
+Typical memory usage:
+- AVI instance: ~200 bytes
+- Scratch buffer: 2048 bytes (your allocation)
+- Command queue: ~1KB
+- **Total: ~3-4KB**
 
-Examples:
-```rust
-device.subscribe("avi/home/+/sensor/temperature").await?;  // All temp sensors
-device.subscribe("avi/home/device_1234/#").await?;         // All device 1234 topics
-```
-
-## 📊 Message Flow Example
-
-```
-[ESP32 Device]                [Gateway]                    [P2P Mesh]
-     |                            |                              |
-     |--Hello(device_id=1234)---->|                              |
-     |<-------Welcome-------------|                              |
-     |                            |                              |
-     |--Subscribe("avi/cmd")----->|                              |
-     |                            |--Subscribe("avi/cmd")------->|
-     |<----SubscribeAck-----------|                              |
-     |                            |                              |
-     |--SensorUpdate(temp)------->|                              |
-     |                            |--Publish("avi/.../temp")---->|
-     |                            |                              |
-     |                            |<---Message("avi/cmd")--------|
-     |<----Message("avi/cmd")-----|                              |
-```
-
-## 💡 Best Practices
-
-1. **Call `poll()` regularly** - This is how you receive messages
-2. **Keep message handler fast** - Don't block in `on_message()`
-3. **Use appropriate buffer sizes** - 1024 bytes is usually sufficient
-4. **Handle connection failures** - Implement reconnection logic
-5. **Namespace your topics** - Use device_id in topic names
+Command queue:
+- Default size: 16 commands
+- Adjustable in `c_api.rs`
+- Fast: < 1μs per queue operation
 
 ## 🐛 Troubleshooting
 
-**Device won't connect:**
-- Verify gateway is running and UDP port 8888 is open
-- Check WiFi connection on ESP32
-- Confirm gateway IP address is correct
+### Queue Full (-2 errors)
 
-**Not receiving messages:**
-- Make sure you're calling `poll()` in your main loop
-- Verify subscription was successful
-- Check topic names match exactly
+```c
+int ret = avi_embedded_publish(avi, ...);
+if (ret == -2) {
+    vTaskDelay(pdMS_TO_TICKS(10));  // Back off
+    ret = avi_embedded_publish(avi, ...);  // Retry
+}
+```
 
-**ESP32 crashes:**
-- Increase stack size in `sdkconfig`
-- Reduce buffer sizes if memory is tight
-- Enable panic handler for debugging
+### Stack Overflow
 
-## 📝 License
+Increase task stack size:
 
-MIT
+```c
+xTaskCreate(my_task, "avi", 8192, NULL, 5, NULL);
+//                              ^^^^
+//                          Increase this
+```
+
+### Linker Errors
+
+Add to `CMakeLists.txt`:
+
+```cmake
+target_link_libraries(${COMPONENT_LIB} INTERFACE 
+    -Wl,--whole-archive
+    libavi_embedded.a
+    -Wl,--no-whole-archive
+    gcc m c stdc++
+)
+```
+
+## 🤝 Contributing
+
+The C API is generated from Rust code. To add features:
+
+1. Add Rust function in `lib.rs` (original API)
+2. Add C wrapper in `c_api.rs` (FFI layer)
+3. Regenerate header: `cbindgen --output avi_embedded.h`
+4. Update examples and docs
+

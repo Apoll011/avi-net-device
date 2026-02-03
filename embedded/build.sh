@@ -58,7 +58,7 @@ fi
 echo ""
 echo -e "${GREEN}[3/4] Generating C header...${NC}"
 if [ -z "$SKIP_CBINDGEN" ]; then
-    cbindgen --config cbindgen.toml --crate avi-p2p-embedded --output avi_embedded.h
+    cbindgen --config cbindgen.toml --crate avi-p2p-embedded --output output/avi_embedded.h
     echo -e "${GREEN}Header generated ✓${NC}"
 else
     echo -e "${YELLOW}Skipped (cbindgen not installed)${NC}"
@@ -68,10 +68,7 @@ fi
 echo ""
 echo -e "${GREEN}[4/4] Copying artifacts...${NC}"
 mkdir -p output
-cp "target/$TARGET/release/libavi_embedded.a" output/
-if [ -f "avi_embedded.h" ]; then
-    cp avi_embedded.h output/
-fi
+cp "../target/$TARGET/release/libavi_p2p_embedded.a" output/
 
 echo -e "${GREEN}Artifacts copied to output/ ✓${NC}"
 

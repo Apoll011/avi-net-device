@@ -1,5 +1,5 @@
 use crate::{AviEmbedded, AviEmbeddedConfig, MessageHandler, UdpClient};
-use avi_p2p_protocol::{PressType, SensorValue, UplinkMessage};
+use avi_p2p_protocol::{PressType, SensorValue};
 use core::cell::RefCell;
 use core::ffi::{c_char, c_void};
 use core::slice;
@@ -644,7 +644,7 @@ pub async fn avi_process_commands(avi: &AviWrapper) {
         let mut avi_mut = avi.avi.borrow_mut();
 
         match cmd {
-            AviCommand::Connect { device_id } => {
+            AviCommand::Connect { device_id: _ } => {
                 // Store device_id in config (it's already set, but we could update it)
                 let _ = avi_mut.connect().await;
             }

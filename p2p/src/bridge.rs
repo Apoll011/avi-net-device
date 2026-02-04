@@ -207,6 +207,7 @@ impl EmbeddedBridge {
             UplinkMessage::ButtonPress {
                 button_id,
                 press_type,
+                custom_data,
             } => {
                 if let Some(session) = sessions_lock.get(&addr) {
                     let dev_id = session.device_id;
@@ -216,6 +217,7 @@ impl EmbeddedBridge {
                     let payload = json!({
                         "button_id": button_id,
                         "type": format!("{:?}", press_type),
+                        "data": custom_data.to_string(),
                         "ts": std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default().as_secs()
@@ -227,7 +229,11 @@ impl EmbeddedBridge {
                 }
             }
 
-            UplinkMessage::SensorUpdate { sensor_name, data } => {
+            UplinkMessage::SensorUpdate {
+                sensor_name,
+                data,
+                custom_data,
+            } => {
                 if let Some(session) = sessions_lock.get(&addr) {
                     let dev_id = session.device_id;
 
@@ -250,6 +256,7 @@ impl EmbeddedBridge {
                                 avi_p2p_protocol::SensorValue::Humidity(_) => "%",
                                 _ => ""
                             },
+                            "custom": custom_data.to_string()
                         },
                          "ts": std::time::SystemTime::now()
                            .duration_since(std::time::UNIX_EPOCH)

@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+
 use esp_idf_hal as _;
 
 extern crate alloc;
@@ -10,6 +11,34 @@ use serde::Serialize;
 // C API module
 #[cfg(feature = "c-api")]
 pub mod c_api;
+
+// ============================================================================
+// System Allocator (uses ESP-IDF malloc/free)
+// ============================================================================
+
+extern "C" {
+    fn malloc(size: usize) -> *mut core::ffi::c_void;
+    fn free(ptr: *mut core::ffi::c_void);
+}
+
+struct EspAllocator;
+
+unsafe impl core::alloc::GlobalAlloc for EspAllocator {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        malloc(layout.size()) as *mut u8
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: core::alloc::Layout) {
+        free(ptr as *mut core::ffi::c_void);
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: EspAllocator = EspAllocator;
+
+// ============================================================================
+// Library Logic
+// ============================================================================
 
 pub trait UdpClient {
     type Error;
@@ -171,16 +200,5 @@ impl<'a, S: UdpClient, H: MessageHandler> AviEmbedded<'a, S, H> {
             self.socket.send(used_slice).await?;
         }
         Ok(())
-    }
-}
-use linked_list_allocator::LockedHeap;
-#[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
-
-pub(crate) fn init_heap() {
-    const HEAP_SIZE: usize = 32 * 1024;
-    static mut HEAP: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
-    unsafe {
-        ALLOCATOR.lock().init(HEAP.as_mut_ptr(), HEAP_SIZE);
     }
 }
